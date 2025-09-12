@@ -44,8 +44,10 @@ mkdir -p packages
 
 ### 2. 修改 Composer 配置
 
-在站点根目录的 `composer.json` 中添加：
+在站点根目录的 `composer.json` 中需要添加两个部分：
 
+#### 2.1 添加仓库配置
+在 `repositories` 部分添加：
 ```json
 {
     "repositories": {
@@ -53,9 +55,56 @@ mkdir -p packages
             "type": "path",
             "url": "./packages/nexusphp-bank-system"
         }
-    },
-    "require": {
+    }
+}
+```
+
+#### 2.2 添加自动加载配置
+在 `autoload.psr-4` 部分添加：
+```json
+{
+    "autoload": {
+        "psr-4": {
+            "NexusPlugin\\BankSystem\\": "packages/nexusphp-bank-system/src/"
+        }
+    }
+}
+```
+
+#### 2.3 添加依赖配置
+在 `require` 或 `require-dev` 部分添加：
+```json
+{
+    "require-dev": {
         "madrays/nexusphp-bank-system": "dev-main"
+    }
+}
+```
+
+**重要说明**：
+- 插件必须放在 `packages/nexusphp-bank-system/` 目录下
+- 文件夹名称 `nexusphp-bank-system` 不能修改
+- 命名空间 `NexusPlugin\\BankSystem\\` 不能修改
+
+#### 2.4 完整配置示例
+你的 `composer.json` 应该包含以下部分：
+```json
+{
+    "autoload": {
+        "psr-4": {
+            "Nexus\\": "nexus/",
+            "App\\": "app/",
+            "NexusPlugin\\BankSystem\\": "packages/nexusphp-bank-system/src/"
+        }
+    },
+    "require-dev": {
+        "madrays/nexusphp-bank-system": "dev-main"
+    },
+    "repositories": {
+        "bank-system": {
+            "type": "path",
+            "url": "./packages/nexusphp-bank-system"
+        }
     }
 }
 ```
@@ -63,7 +112,10 @@ mkdir -p packages
 ### 3. 安装插件
 
 ```bash
-# 重新生成自动加载文件
+# 重新生成自动加载文件并清除缓存
+composer dump-autoload && php artisan config:clear && php artisan cache:clear
+
+# 重新加载自动加载
 composer dump-autoload
 
 # 安装插件
@@ -98,7 +150,16 @@ cd packages/nexusphp-bank-system
 ./setup-cron.sh verify --site-root /path/to/your/site
 ```
 
-### 6. 清除缓存
+### 6. 复制公共文件
+
+如果安装后出现视图文件缺失错误，需要手动复制公共文件：
+
+```bash
+# 复制银行系统插件的公共文件到站点public目录
+cp -r packages/nexusphp-bank-system/public/* public/
+```
+
+### 7. 清除缓存
 
 ```bash
 php artisan config:clear
@@ -175,6 +236,18 @@ nexusphp-bank-system/
 ```
 
 ## 故障排除
+
+### 视图文件缺失
+
+如果出现"视图文件不存在"或"模板文件缺失"错误：
+
+```bash
+# 手动复制公共文件
+cp -r packages/nexusphp-bank-system/public/* public/
+
+# 确保文件权限正确
+chmod -R 755 public/bank*
+```
 
 ### 定时任务未执行
 
