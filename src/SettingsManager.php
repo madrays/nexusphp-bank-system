@@ -36,6 +36,11 @@ class SettingsManager
                         ->default(true)
                         ->helperText('是否启用银行系统功能'),
 
+                    Forms\Components\Toggle::make('bank_system.show_in_navigation')
+                        ->label('显示在导航栏')
+                        ->default(true)
+                        ->helperText('是否在站点导航栏中显示银行菜单'),
+
                     Forms\Components\Select::make('bank_system.min_user_class')
                         ->label('最低用户等级')
                         ->options(self::getUserClassOptions())
@@ -62,10 +67,10 @@ class SettingsManager
                         ->default(0.1)
                         ->helperText('贷款的日利率百分比'),
 
-                    Forms\Components\Repeater::make('bank_system.loan_terms')
-                        ->label('可选贷款期限')
+                    Forms\Components\Repeater::make('bank_system.loan_interest_rates')
+                        ->label('贷款分级利率')
                         ->schema([
-                            Forms\Components\TextInput::make('days')
+                            Forms\Components\TextInput::make('term_days')
                                 ->label('期限（天）')
                                 ->numeric()
                                 ->required()
@@ -74,16 +79,22 @@ class SettingsManager
                                 ->label('显示名称')
                                 ->required()
                                 ->placeholder('如：7天、15天'),
+                            Forms\Components\TextInput::make('loan_rate')
+                                ->label('日利率 (%)')
+                                ->numeric()
+                                ->step(0.001)
+                                ->required()
+                                ->minValue(0),
                         ])
                         ->default([
-                            ['days' => 7, 'name' => '7天'],
-                            ['days' => 15, 'name' => '15天'],
-                            ['days' => 30, 'name' => '30天'],
-                            ['days' => 60, 'name' => '60天'],
-                            ['days' => 90, 'name' => '90天'],
+                            ['term_days' => 7, 'name' => '7天', 'loan_rate' => 0.08],
+                            ['term_days' => 15, 'name' => '15天', 'loan_rate' => 0.10],
+                            ['term_days' => 30, 'name' => '30天', 'loan_rate' => 0.12],
+                            ['term_days' => 60, 'name' => '60天', 'loan_rate' => 0.15],
+                            ['term_days' => 90, 'name' => '90天', 'loan_rate' => 0.18],
                         ])
-                        ->helperText('用户可以选择的贷款期限')
-                        ->columns(2)
+                        ->helperText('不同期限的贷款利率，期限和利率完全可自定义')
+                        ->columns(3)
                         ->columnSpanFull(),
 
                     Forms\Components\TextInput::make('bank_system.min_loan_amount')
@@ -225,15 +236,16 @@ class SettingsManager
     {
         return [
             'enabled' => true,
+            'show_in_navigation' => true,
             'min_user_class' => \App\Models\User::CLASS_USER,
             'loan_ratio' => 100,
             'loan_interest_rate' => 0.1,
-            'loan_terms' => [
-                ['days' => 7, 'name' => '7天'],
-                ['days' => 15, 'name' => '15天'],
-                ['days' => 30, 'name' => '30天'],
-                ['days' => 60, 'name' => '60天'],
-                ['days' => 90, 'name' => '90天'],
+            'loan_interest_rates' => [
+                ['term_days' => 7, 'name' => '7天', 'loan_rate' => 0.08],
+                ['term_days' => 15, 'name' => '15天', 'loan_rate' => 0.10],
+                ['term_days' => 30, 'name' => '30天', 'loan_rate' => 0.12],
+                ['term_days' => 60, 'name' => '60天', 'loan_rate' => 0.15],
+                ['term_days' => 90, 'name' => '90天', 'loan_rate' => 0.18],
             ],
             'min_loan_amount' => 100,
             'demand_interest_rate' => 0.01,

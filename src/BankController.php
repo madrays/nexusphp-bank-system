@@ -66,7 +66,8 @@ class BankController
         $loanAccrued = 0.0; $loanPayoff = null;
         if ($currentLoan) {
             $today = date('Y-m-d');
-            $endDate = $today;
+            // 利息计算截止到前一天，不包含当天
+            $endDate = date('Y-m-d', strtotime($today) - 86400);
             if (!empty($currentLoan['due_date'])) {
                 $dueYmd = date('Y-m-d', strtotime($currentLoan['due_date']));
                 if ($dueYmd < $endDate) { $endDate = $dueYmd; }
@@ -138,10 +139,17 @@ class BankController
             return;
         }
 
+        // 检查是否有配置的贷款利率
+        $settings = $this->bankRepo->getSettings();
+        if (empty($settings['loan_interest_rates'])) {
+            $this->returnWithError('系统暂未配置贷款期限和利率，请联系管理员');
+            return;
+        }
+
         // 获取对应期限的利率
         $interestRate = $this->getInterestRate($termDays, 'loan');
         if ($interestRate === null) {
-            $this->returnWithError('无效的贷款期限');
+            $this->returnWithError('无效的贷款期限，请选择系统配置的期限');
             return;
         }
 
@@ -176,7 +184,8 @@ class BankController
 
         // 计算至今应计利息与一次性应还
         $today = date('Y-m-d');
-        $endDate = $today;
+        // 利息计算截止到前一天，不包含当天
+        $endDate = date('Y-m-d', strtotime($today) - 86400);
         if (!empty($loan['due_date'])) {
             $dueYmd = date('Y-m-d', strtotime($loan['due_date']));
             if ($dueYmd < $endDate) { $endDate = $dueYmd; }
@@ -263,10 +272,17 @@ class BankController
             $termDays = 0;
             $interestRate = $this->getInterestRate(null, 'deposit_demand');
         } else {
+            // 检查是否有配置的定期存款利率
+            $settings = $this->bankRepo->getSettings();
+            if (empty($settings['fixed_deposit_rates'])) {
+                $this->returnWithError('系统暂未配置定期存款期限和利率，请联系管理员');
+                return;
+            }
+            
             $interestRate = $this->getInterestRate($termDays, 'deposit_fixed');
         }
         if ($interestRate === null) {
-            $this->returnWithError('无效的存款期限');
+            $this->returnWithError('无效的存款期限，请选择系统配置的期限');
             return;
         }
 
@@ -318,11 +334,12 @@ class BankController
         if ($type === 'loan') {
             $list = $settings['loan_interest_rates'] ?? [];
             foreach ($list as $item) {
-                if (($item['term_days'] ?? $item['term_days'] ?? $item['term_days'] ?? null) == $termDays) {
-                    return (float)($item['loan_rate'] ?? $settings['loan_interest_rate'] ?? 0.05);
+                if (($item['term_days'] ?? null) == $termDays) {
+                    return (float)($item['loan_rate'] ?? 0);
                 }
             }
-            return (float)($settings['loan_interest_rate'] ?? 0.05);
+            // 如果没有找到对应期限的配置，返回null表示无效
+            return null;
         }
 
         if ($type === 'deposit_demand') {
@@ -333,11 +350,11 @@ class BankController
             $list = $settings['fixed_deposit_rates'] ?? [];
             foreach ($list as $item) {
                 if (($item['term_days'] ?? null) == $termDays) {
-                    return (float)($item['interest_rate'] ?? 0.02);
+                    return (float)($item['interest_rate'] ?? 0);
                 }
             }
-            // 未配置时退回活期利率
-            return (float)($settings['demand_interest_rate'] ?? 0.02);
+            // 如果没有找到对应期限的配置，返回null表示无效
+            return null;
         }
 
         return null;

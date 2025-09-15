@@ -214,24 +214,36 @@ class BankSystemRepository extends BasePlugin
      */
     public function addBankSystemLink(): void
     {
-        $settings = get_setting('bank_system.enabled', false);
-        if (!$settings) {
-            return;
-        }
-
-        echo '<script>
-        document.addEventListener("DOMContentLoaded", function() {
-            var mainMenu = document.querySelector("#mainmenu");
-            if (mainMenu) {
-                var bankLi = document.createElement("li");
-                var bankLink = document.createElement("a");
-                bankLink.href = "bank.php";
-                bankLink.innerHTML = "&nbsp;银行系统&nbsp;";
-                bankLi.appendChild(bankLink);
-                mainMenu.appendChild(bankLi);
+        try {
+            // 检查银行系统是否启用
+            $enabled = get_setting('bank_system.enabled', false);
+            if (!$enabled) {
+                return;
             }
-        });
-        </script>';
+
+            // 检查导航开关设置
+            $showInNav = get_setting('bank_system.show_in_navigation', true);
+            if (!$showInNav) {
+                return;
+            }
+
+            echo '<script>
+            document.addEventListener("DOMContentLoaded", function() {
+                var mainMenu = document.querySelector("#mainmenu");
+                if (mainMenu) {
+                    var bankLi = document.createElement("li");
+                    var bankLink = document.createElement("a");
+                    bankLink.href = "bank.php";
+                    bankLink.innerHTML = "&nbsp;银行系统&nbsp;";
+                    bankLi.appendChild(bankLink);
+                    mainMenu.appendChild(bankLi);
+                }
+            });
+            </script>';
+        } catch (\Throwable $e) {
+            // 静默处理错误，避免影响页面加载
+            do_log("[BANK_SYSTEM] addBankSystemLink failed: " . $e->getMessage(), 'error');
+        }
     }
 
     /**
@@ -340,7 +352,7 @@ class BankSystemRepository extends BasePlugin
      */
     public function getUserLoan(int $userId): ?array
     {
-        $sql = "SELECT * FROM bank_loans WHERE user_id = $userId AND status = 'active' LIMIT 1";
+        $sql = "SELECT * FROM bank_loans WHERE user_id = $userId AND status IN ('active', 'overdue') ORDER BY created_at DESC LIMIT 1";
         $result = \Nexus\Database\NexusDB::select($sql);
 
         return $result[0] ?? null;
@@ -466,13 +478,14 @@ class BankSystemRepository extends BasePlugin
         $deposits = $this->getUserDeposits($userId);
         $demandAccount = $this->getOrCreateDemandAccount($userId, (float)($settings['demand_interest_rate'] ?? 0.0));
 
-        // 为定期存款补充“应计至今”展示字段
+        // 为定期存款补充"应计至今"展示字段
         $nowTs = time();
         foreach ($deposits as &$dep) {
             if (($dep['status'] ?? '') === 'active' && (($dep['type'] ?? 'fixed') === 'fixed')) {
                 $startStr = $dep['last_interest_date'] ?: $dep['created_at'];
                 $startTs = strtotime(date('Y-m-d', strtotime($startStr)));
-                $endTs = $nowTs;
+                // 利息计算截止到前一天，不包含当天
+                $endTs = strtotime(date('Y-m-d', $nowTs - 86400));
                 if (!empty($dep['maturity_date'])) {
                     $matTs = strtotime($dep['maturity_date']);
                     if ($matTs < $endTs) { $endTs = $matTs; }
@@ -490,14 +503,23 @@ class BankSystemRepository extends BasePlugin
         if ($currentLoan && in_array($currentLoan['status'], ['active','overdue'], true)) {
             $startStr = $currentLoan['last_interest_date'] ?: $currentLoan['created_at'];
             $startTs = strtotime(date('Y-m-d', strtotime($startStr)));
-            $endTs = $nowTs;
+            // 利息计算截止到前一天，不包含当天
+            $endTs = strtotime(date('Y-m-d', $nowTs - 86400));
             if (!empty($currentLoan['due_date'])) {
                 $dueTs = strtotime($currentLoan['due_date']);
                 if ($dueTs < $endTs) { $endTs = $dueTs; }
             }
             $elapsed = max(0, $endTs - $startTs);
             $daysFloat = $elapsed / 86400;
-            $loanAccrued = round((float)$currentLoan['remaining_amount'] * (float)$currentLoan['interest_rate'] * $daysFloat, 2);
+            
+            // 计算实际利率：正常利率 + 逾期罚息率（如果逾期）
+            $actualRate = (float)$currentLoan['interest_rate'];
+            if ($currentLoan['status'] === 'overdue') {
+                $penaltyRate = (float)($settings['overdue_penalty_rate'] ?? 0.005); // 已经是小数
+                $actualRate += $penaltyRate;
+            }
+            
+            $loanAccrued = round((float)$currentLoan['remaining_amount'] * $actualRate * $daysFloat, 2);
             $loanPayoff = round((float)$currentLoan['remaining_amount'] + $loanAccrued, 2);
         }
 
@@ -512,19 +534,37 @@ class BankSystemRepository extends BasePlugin
             'fixed_deposit_rates' => $settings['fixed_deposit_rates'] ?? [],
             'loan_ratio' => (float)($settings['loan_ratio'] ?? 24),
             'loan_ratio_constant' => (float)($settings['loan_ratio_constant'] ?? 0),
+            'overdue_penalty_rate' => (float)($settings['overdue_penalty_rate'] ?? 0),
         ];
 
-        // 组合统一的期限利率列表，便于表单选择
-        $termMap = [];
-        foreach (($settings['fixed_deposit_rates'] ?? []) as $r) {
-            $td = (int)($r['term_days'] ?? 0);
-            if (!isset($termMap[$td])) { $termMap[$td] = ['term_days' => $td]; }
-            $termMap[$td]['deposit_rate'] = (float)($r['interest_rate'] ?? 0);
-        }
+        // 分别处理贷款和存款利率，不混合
+        $loanRates = [];
         foreach (($settings['loan_interest_rates'] ?? []) as $r) {
-            $td = (int)($r['term_days'] ?? 0);
+            $loanRates[] = [
+                'term_days' => (int)($r['term_days'] ?? 0),
+                'loan_rate' => (float)($r['loan_rate'] ?? 0),
+            ];
+        }
+        
+        $depositRates = [];
+        foreach (($settings['fixed_deposit_rates'] ?? []) as $r) {
+            $depositRates[] = [
+                'term_days' => (int)($r['term_days'] ?? 0),
+                'deposit_rate' => (float)($r['interest_rate'] ?? 0),
+            ];
+        }
+        
+        // 为了向后兼容，保留混合数组（但只用于显示，不用于表单选择）
+        $termMap = [];
+        foreach ($depositRates as $r) {
+            $td = $r['term_days'];
             if (!isset($termMap[$td])) { $termMap[$td] = ['term_days' => $td]; }
-            $termMap[$td]['loan_rate'] = (float)($r['loan_rate'] ?? ($settings['loan_interest_rate'] ?? 0));
+            $termMap[$td]['deposit_rate'] = $r['deposit_rate'];
+        }
+        foreach ($loanRates as $r) {
+            $td = $r['term_days'];
+            if (!isset($termMap[$td])) { $termMap[$td] = ['term_days' => $td]; }
+            $termMap[$td]['loan_rate'] = $r['loan_rate'];
         }
         ksort($termMap);
         $interestRates = array_values($termMap);
@@ -540,7 +580,9 @@ class BankSystemRepository extends BasePlugin
             'deposits' => $deposits,
             'demandAccount' => $demandAccount,
             'demandInterestRate' => (float)($demandAccount['interest_rate'] ?? ($settings['demand_interest_rate'] ?? 0)),
-            'interestRates' => $interestRates,
+            'interestRates' => $interestRates, // 混合数组，仅用于显示
+            'loanRates' => $loanRates, // 纯贷款利率数组
+            'depositRates' => $depositRates, // 纯存款利率数组
             'minLoanAmount' => (float)($settings['min_loan_amount'] ?? 1000),
             'minDepositAmount' => (float)($settings['min_fixed_amount'] ?? 1000),
             'penaltyRate' => (float)($settings['early_withdrawal_penalty'] ?? 0.1),
@@ -633,8 +675,9 @@ class BankSystemRepository extends BasePlugin
             // 默认值补全
             $defaults = [
                 'enabled' => true,
+                'show_in_navigation' => true,
                 'demand_interest_rate' => 0.01,
-                'loan_interest_rate' => 0.08,
+                'loan_interest_rate' => 0.1,
                 'loan_ratio' => 24,
                 'loan_ratio_constant' => 0,
                 'early_withdrawal_penalty' => 0.1,
@@ -650,12 +693,30 @@ class BankSystemRepository extends BasePlugin
                 }
             }
 
-            // 类型转换
-            $settings['demand_interest_rate'] = (float)$settings['demand_interest_rate'];
-            $settings['loan_interest_rate'] = (float)$settings['loan_interest_rate'];
+            // 类型转换和百分比到小数转换
+            $settings['demand_interest_rate'] = (float)$settings['demand_interest_rate'] / 100;
+            $settings['loan_interest_rate'] = (float)$settings['loan_interest_rate'] / 100;
             $settings['loan_ratio'] = (float)$settings['loan_ratio'];
             $settings['loan_ratio_constant'] = (float)$settings['loan_ratio_constant'];
-            $settings['early_withdrawal_penalty'] = (float)$settings['early_withdrawal_penalty'];
+            $settings['early_withdrawal_penalty'] = (float)$settings['early_withdrawal_penalty'] / 100;
+            $settings['overdue_penalty_rate'] = (float)$settings['overdue_penalty_rate'] / 100;
+            
+            // 转换分级利率
+            if (isset($settings['loan_interest_rates']) && is_array($settings['loan_interest_rates'])) {
+                foreach ($settings['loan_interest_rates'] as &$rate) {
+                    if (isset($rate['loan_rate'])) {
+                        $rate['loan_rate'] = (float)$rate['loan_rate'] / 100;
+                    }
+                }
+            }
+            
+            if (isset($settings['fixed_deposit_rates']) && is_array($settings['fixed_deposit_rates'])) {
+                foreach ($settings['fixed_deposit_rates'] as &$rate) {
+                    if (isset($rate['interest_rate'])) {
+                        $rate['interest_rate'] = (float)$rate['interest_rate'] / 100;
+                    }
+                }
+            }
 
             return $settings;
         } catch (\Throwable $e) {

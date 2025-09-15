@@ -197,7 +197,15 @@ class BankScheduler
 
         if ($daysDiff >= 1 && (float)$loan['interest_rate'] > 0) {
             $days = (int)floor($daysDiff);
-            $dailyInterest = (float)$loan['remaining_amount'] * (float)$loan['interest_rate'];
+            
+            // 计算实际利率：正常利率 + 逾期罚息率（如果逾期）
+            $actualRate = (float)$loan['interest_rate'];
+            if ($loan['status'] === 'overdue') {
+                $penaltyRate = get_setting('bank_system.overdue_penalty_rate', 0); // 已经是小数
+                $actualRate += $penaltyRate;
+            }
+            
+            $dailyInterest = (float)$loan['remaining_amount'] * $actualRate;
             $totalInterest = $dailyInterest * $days;
 
             if ($totalInterest > 0) {
@@ -207,8 +215,8 @@ class BankScheduler
                 $sql = "UPDATE bank_loans SET remaining_amount = $newRemainingAmount, last_interest_date = '$endDate', updated_at = NOW() WHERE id = {$loan['id']}";
                 \Nexus\Database\NexusDB::statement($sql);
 
-                // 记录利息
-                $this->recordInterest((int)$loan['user_id'], 'loan', (int)$loan['id'], (float)$totalInterest, (float)$loan['interest_rate']);
+                // 记录利息（使用实际利率）
+                $this->recordInterest((int)$loan['user_id'], 'loan', (int)$loan['id'], (float)$totalInterest, $actualRate);
             }
         }
     }

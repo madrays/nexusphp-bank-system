@@ -10,6 +10,14 @@ if (!$CURUSER) {
     exit;
 }
 
+// 检查用户等级权限
+$minClass = get_setting('bank_system.min_user_class', \App\Models\User::CLASS_USER);
+if ($CURUSER['class'] < $minClass) {
+    stdmsg("权限不足", "您的用户等级不足以访问银行系统。");
+    stdfoot();
+    exit;
+}
+
 $view_path = dirname(__FILE__) . '/../packages/nexusphp-bank-system/resources/views/bank.php';
 
 if (!file_exists($view_path)) {

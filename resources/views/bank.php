@@ -46,9 +46,9 @@ $bonusName = $bonusName ?? '魔力';
 
 .bank-sections {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 30px;
-    margin-bottom: 30px;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
 }
 
 .bank-section{background:var(--card);padding:28px;border-radius:var(--radius);box-shadow:var(--shadow)}
@@ -246,6 +246,55 @@ $bonusName = $bonusName ?? '魔力';
 .pill{background:#eef2ff;color:#1d4ed8;border:1px solid #dbeafe;border-radius:999px;padding:2px 8px;font-size:12px}
 .pill.blue{background:#e0f2fe;color:#0369a1;border-color:#bae6fd}
 
+/* 站点概览紧凑样式 */
+.overview-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:12px}
+.stat-item{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center}
+.stat-item .stat-label{font-size:12px;color:#6b7280;margin-bottom:4px;font-weight:500}
+.stat-item .stat-value{font-size:18px;font-weight:700;background:linear-gradient(135deg,#667eea,#764ba2,#f093fb,#f5576c);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:2px}
+.stat-item .stat-hint{font-size:11px;color:#9ca3af}
+
+/* 定期存款折叠样式 */
+.deposits-container{position:relative}
+.deposits-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.deposits-hidden{display:none;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:16px}
+.deposits-toggle{text-align:center;margin-top:16px}
+.deposits-toggle .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:6px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;cursor:pointer;transition:all 0.2s}
+.deposits-toggle .btn:hover{background:#e2e8f0;color:#0f172a}
+.deposits-toggle .btn .toggle-icon{transition:transform 0.2s}
+.deposits-toggle .btn.expanded .toggle-icon{transform:rotate(180deg)}
+
+/* 使用规则与说明样式 - 紧凑版 */
+.rules-section{margin-bottom:16px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0}
+.rules-title{font-size:14px;font-weight:700;color:#1e293b;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.rules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.rule-item{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px}
+.rule-label{font-size:12px;font-weight:600;color:#475569;margin-bottom:4px}
+.rule-content{font-size:13px;color:#0f172a;line-height:1.4}
+.formula{font-family:monospace;background:#f1f5f9;padding:2px 6px;border-radius:3px;font-size:12px}
+
+.rate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.rate-card{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;text-align:center}
+.rate-header{font-size:12px;font-weight:600;color:#475569;margin-bottom:6px}
+.rate-value{font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px}
+.rate-item{font-size:11px;color:#64748b;margin:1px 0}
+.rate-desc{font-size:11px;color:#6b7280;margin-top:6px}
+
+.interest-flow{display:flex;justify-content:space-around;gap:12px;flex-wrap:wrap}
+.flow-item{display:flex;align-items:center;gap:6px;background:#fff;padding:8px 12px;border-radius:6px;border:1px solid #e2e8f0;min-width:160px}
+.flow-icon{font-size:16px}
+.flow-text{font-size:12px;font-weight:500;color:#0f172a}
+
+.tips-list{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px}
+.tip-item{font-size:12px;color:#475569;line-height:1.4;margin-bottom:4px;padding-left:6px}
+.tip-item:last-child{margin-bottom:0}
+
+@media (max-width:768px){
+  .rules-grid{grid-template-columns:1fr}
+  .rate-grid{grid-template-columns:1fr}
+  .interest-flow{flex-direction:column;align-items:stretch}
+  .flow-item{min-width:auto}
+}
+
 /* 统一小指标网格（非胶囊） - 已弃用，保留以防其他地方使用 */
 .metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:8px 0 10px}
 .metric{background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;padding:10px 12px;min-height:64px;display:flex;flex-direction:column}
@@ -441,7 +490,18 @@ $bonusName = $bonusName ?? '魔力';
                     </div>
                     <div class="basic-info-row">
                       <span class="basic-label">日利率：</span>
-                      <span class="basic-value"><?= number_format((float)($loan['interest_rate'] ?? 0) * 100, 2) ?>%</span>
+                      <span class="basic-value">
+                        <?php 
+                        $baseRate = (float)($loan['interest_rate'] ?? 0) * 100;
+                        if ($loan['status'] === 'overdue') {
+                          $penaltyRate = (float)($data['settingsForDisplay']['overdue_penalty_rate'] ?? 0) * 100;
+                          $totalRate = $baseRate + $penaltyRate;
+                          echo number_format($baseRate, 2) . '% + ' . number_format($penaltyRate, 2) . '%罚息 = ' . number_format($totalRate, 2) . '%';
+                        } else {
+                          echo number_format($baseRate, 2) . '%';
+                        }
+                        ?>
+                      </span>
                     </div>
                   </div>
                   
@@ -497,21 +557,38 @@ $bonusName = $bonusName ?? '魔力';
                         </div>
                         <div class="form-group">
                             <label class="form-label">贷款期限</label>
-                            <select name="term_days" class="form-select" required>
-                                <?php foreach ($data['interestRates'] as $rate): ?>
-                                    <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= ($rate['loan_rate'] * 100) ?>%)</option>
-                                <?php endforeach; ?>
-                            </select>
+                            <?php if (!empty($data['loanRates'])): ?>
+                                <select name="term_days" class="form-select" required>
+                                    <?php foreach ($data['loanRates'] as $rate): ?>
+                                        <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= number_format($rate['loan_rate'] * 100, 2) ?>%)</option>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php else: ?>
+                                <div class="form-input" style="background-color: #f8f9fa; color: #6c757d; cursor: not-allowed;">
+                                    暂无可选期限，请联系管理员配置
+                                </div>
+                                <small class="text-muted">管理员需要在后台设置中配置贷款期限和利率</small>
+                            <?php endif; ?>
                         </div>
-                        <button type="submit" class="btn btn-primary">提交申请</button>
+                        <?php if (!empty($data['loanRates'])): ?>
+                            <button type="submit" class="btn btn-primary">提交申请</button>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-secondary" disabled>暂不可用</button>
+                        <?php endif; ?>
                     </form>
                 </div>
             <?php endif; ?>
             <div class="sub-title">贷款说明</div>
             <div class="rate-grid" aria-label="贷款期限与利率">
-              <?php foreach ($data['interestRates'] as $r): ?>
-                <span class="rate-chip"><?= (int)$r['term_days'] ?> 天 · <?= number_format((float)$r['loan_rate']*100,2) ?>%/日</span>
-              <?php endforeach; ?>
+              <?php if (!empty($data['loanRates'])): ?>
+                <?php foreach ($data['loanRates'] as $r): ?>
+                  <span class="rate-chip"><?= (int)$r['term_days'] ?> 天 · <?= number_format((float)$r['loan_rate']*100,2) ?>%/日</span>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <div class="text-muted" style="padding: 20px; text-align: center; background-color: #f8f9fa; border-radius: 8px;">
+                  <i class="fas fa-info-circle"></i> 暂无可选期限，请联系管理员配置
+                </div>
+              <?php endif; ?>
             </div>
         </div>
       </div>
@@ -533,15 +610,26 @@ $bonusName = $bonusName ?? '魔力';
                     </div>
                     <div class="form-field">
                         <label class="form-label">存款期限</label>
-                        <select name="term_days" class="form-select" required>
-                            <?php foreach ($data['interestRates'] as $rate): ?>
-                                <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= ($rate['deposit_rate'] * 100) ?>%)</option>
-                            <?php endforeach; ?>
-                        </select>
+                        <?php if (!empty($data['depositRates'])): ?>
+                            <select name="term_days" class="form-select" required>
+                                <?php foreach ($data['depositRates'] as $rate): ?>
+                                    <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= number_format($rate['deposit_rate'] * 100, 2) ?>%)</option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php else: ?>
+                            <div class="form-input" style="background-color: #f8f9fa; color: #6c757d; cursor: not-allowed;">
+                                暂无可选期限，请联系管理员配置
+                            </div>
+                            <small class="text-muted">管理员需要在后台设置中配置定期存款期限和利率</small>
+                        <?php endif; ?>
                     </div>
                     <div>
                         <label class="form-label" style="visibility:hidden;">提交</label>
-                        <button type="submit" class="btn btn-success">立即创建</button>
+                        <?php if (!empty($data['depositRates'])): ?>
+                            <button type="submit" class="btn btn-success">立即创建</button>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-secondary" disabled>暂不可用</button>
+                        <?php endif; ?>
                     </div>
                 </form>
             </div>
@@ -602,8 +690,15 @@ $bonusName = $bonusName ?? '魔力';
     <div class="panel">
         <div class="panel-title">我的定期存款（在投 <?= (int)($data['fixedActiveCount'] ?? 0) ?> 笔｜合计 <?= number_format($data['fixedActiveTotal'] ?? 0, 2) ?> <?= $data['bonusName'] ?>）</div>
         <div class="muted" style="margin:-6px 0 14px 0;">定期提前支取将扣除手续费：<?= number_format(($data['penaltyRate'] ?? 0)*100, 2) ?>%（活期不收取）。</div>
-        <div class="grid">
-            <?php foreach ($data['deposits'] as $deposit): ?>
+        <div class="deposits-container">
+            <div class="deposits-grid" id="depositsGrid">
+                <?php 
+                $deposits = $data['deposits'] ?? [];
+                $maxVisible = 3; // 默认显示3个
+                $visibleDeposits = array_slice($deposits, 0, $maxVisible);
+                $hiddenCount = count($deposits) - $maxVisible;
+                ?>
+                <?php foreach ($visibleDeposits as $deposit): ?>
                 <div class="deposit-card">
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <div><strong><?= number_format($deposit['amount'], 2) ?> <?= $data['bonusName'] ?></strong></div>
@@ -633,74 +728,180 @@ $bonusName = $bonusName ?? '魔力';
                         <?php endif; ?>
                     </div>
                 </div>
-            <?php endforeach; ?>
+                <?php endforeach; ?>
+            </div>
+            
+            <!-- 隐藏的存款卡片 -->
+            <div class="deposits-hidden" id="depositsHidden" style="display: none;">
+                <?php foreach (array_slice($deposits, $maxVisible) as $deposit): ?>
+                <div class="deposit-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div><strong><?= number_format($deposit['amount'], 2) ?> <?= $data['bonusName'] ?></strong></div>
+                        <span class="badge"><?= $deposit['term_days'] ?> 天</span>
+                    </div>
+                    <div class="muted" style="margin-top:6px;">日利率：<?= number_format($deposit['interest_rate'] * 100, 2) ?>% ｜ 到期：<?= $deposit['maturity_date'] ?: '-' ?></div>
+                    <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <?php
+                          $status = $deposit['status'];
+                          $statusCn = [
+                            'active' => '进行中',
+                            'paid' => '已结清',
+                            'overdue' => '已逾期',
+                            'matured' => '已到期',
+                            'withdrawn' => '已支取'
+                          ][$status] ?? $status;
+                        ?>
+                        <span class="status-<?= htmlspecialchars($status) ?>" style="font-weight:600;font-size:12px;"><?= htmlspecialchars($statusCn) ?></span>
+                        <?php if (($deposit['status']==='active') && ($deposit['type']??'fixed')==='fixed' && isset($deposit['accrued_theoretical'])): ?>
+                          <span class="badge-info" style="border-radius:8px;padding:2px 8px;">应计至今：<?= number_format($deposit['accrued_theoretical'],2) ?> <?= $data['bonusName'] ?></span>
+                        <?php endif; ?>
+                        <?php if ($deposit['status'] === 'active'): ?>
+                            <form method="post" action="/bank-withdraw.php" style="margin-left:auto;">
+                                <input type="hidden" name="deposit_id" value="<?= $deposit['id'] ?>">
+                                <button type="submit" class="btn btn-warning" onclick="return confirm('提前支取将扣除手续费 <?= number_format(($data['penaltyRate'] ?? 0)*100, 2) ?>%，确定要支取吗？') && setLoading(this)">提前支取</button>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <!-- 展开/收起按钮 -->
+            <?php if ($hiddenCount > 0): ?>
+            <div class="deposits-toggle" style="text-align: center; margin-top: 16px;">
+                <button class="btn btn-secondary" onclick="toggleDeposits()" id="toggleBtn">
+                    <span id="toggleText">展开更多 (<?= $hiddenCount ?> 笔)</span>
+                    <span id="toggleIcon">▼</span>
+                </button>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
     <?php endif; ?>
 
     <div class="row-spacer"></div>
-    <!-- 第四行：站点概览 + 使用规则（Mesh 风 slab，高度一致） -->
-    <div class="row-4">
-      <div>
-        <section class="slab">
-          <h3 class="slab-head">🏦 站点银行概览</h3>
-          <div class="rows">
-            <div class="row-line">
-              <div class="name">活期总额</div>
-              <div class="value"><span class="num-grad"><?= number_format($data['siteOverview']['demand_total'] ?? 0, 2) ?></span><span class="hint">（<?= (int)($data['siteOverview']['demand_count'] ?? 0) ?> 人）</span></div>
-            </div>
-            <div class="row-line">
-              <div class="name">定期在投</div>
-              <div class="value"><span class="num-grad"><?= number_format($data['siteOverview']['fixed_active_total'] ?? 0, 2) ?></span><span class="hint">（<?= (int)($data['siteOverview']['fixed_count'] ?? 0) ?> 笔）</span></div>
-            </div>
-            <div class="row-line">
-              <div class="name">在贷总额</div>
-              <div class="value"><span class="num-grad"><?= number_format($data['siteOverview']['loan_outstanding'] ?? 0, 2) ?></span><span class="hint">（<?= (int)($data['siteOverview']['loan_count'] ?? 0) ?> 笔）</span></div>
-            </div>
-            <div class="row-line">
-              <div class="name">近期利息</div>
-              <div class="value"><span class="num-grad"><?= number_format(array_sum(array_column($data['recentInterest'] ?? [], 'amount')), 2) ?></span></div>
-            </div>
+    <!-- 第四行：站点概览（单独一行） -->
+    <div class="bank-sections">
+      <div class="bank-section">
+        <h3 class="section-title">🏦 站点银行概览</h3>
+        <div class="overview-stats">
+          <div class="stat-item">
+            <div class="stat-label">活期总额</div>
+            <div class="stat-value"><?= number_format($data['siteOverview']['demand_total'] ?? 0, 2) ?></div>
+            <div class="stat-hint"><?= (int)($data['siteOverview']['demand_count'] ?? 0) ?> 人</div>
           </div>
-        </section>
+          <div class="stat-item">
+            <div class="stat-label">定期在投</div>
+            <div class="stat-value"><?= number_format($data['siteOverview']['fixed_active_total'] ?? 0, 2) ?></div>
+            <div class="stat-hint"><?= (int)($data['siteOverview']['fixed_count'] ?? 0) ?> 笔</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">在贷总额</div>
+            <div class="stat-value"><?= number_format($data['siteOverview']['loan_outstanding'] ?? 0, 2) ?></div>
+            <div class="stat-hint"><?= (int)($data['siteOverview']['loan_count'] ?? 0) ?> 笔</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">近期利息</div>
+            <div class="stat-value"><?= number_format(array_sum(array_column($data['recentInterest'] ?? [], 'amount')), 2) ?></div>
+            <div class="stat-hint">总计</div>
+          </div>
+        </div>
       </div>
-      <div>
-        <section class="slab">
-          <h3 class="slab-head">📘 使用规则与说明</h3>
-          <div class="rows">
-            <div class="row-line"><div class="name">额度计算</div><div class="value"><span class="mono">最大额度 = 时魔 × 系数 + 常数</span><span class="hint">（系数 <?= number_format($data['settingsForDisplay']['loan_ratio'] ?? 0, 2) ?>，常数 <?= number_format($data['settingsForDisplay']['loan_ratio_constant'] ?? 0, 2) ?>）</span></div></div>
-            <?php $loanRates = $data['settingsForDisplay']['loan_interest_rates'] ?? []; if (!empty($loanRates)): ?>
-            <div class="row-line"><div class="name">贷款利率分档</div><div class="value"><div class="rate-lines">
-              <?php foreach ($loanRates as $r): ?>
-                <span class="item"><?= (int)($r['term_days'] ?? 0) ?> 天 · <?= number_format((float)($r['loan_rate'] ?? 0), 2) ?>%</span>
-              <?php endforeach; ?>
-            </div></div></div>
-            <?php endif; ?>
+    </div>
+
+    <!-- 第五行：使用规则与说明（单独一行） -->
+    <div class="bank-sections">
+      <div class="bank-section">
+        <h3 class="section-title">📘 使用规则与说明</h3>
+          
+          <!-- 基本规则 -->
+          <div class="rules-section">
+            <h4 class="rules-title">💡 基本规则</h4>
+            <div class="rules-grid">
+              <div class="rule-item">
+                <div class="rule-label">贷款额度</div>
+                <div class="rule-content">
+                  <span class="formula">最大额度 = 时魔 × <?= number_format($data['settingsForDisplay']['loan_ratio'] ?? 0, 2) ?> + <?= number_format($data['settingsForDisplay']['loan_ratio_constant'] ?? 0, 2) ?></span>
+                </div>
+              </div>
+              <div class="rule-item">
+                <div class="rule-label">贷款限制</div>
+                <div class="rule-content">同一时间仅允许一笔进行中的贷款</div>
+              </div>
+              <div class="rule-item">
+                <div class="rule-label">还款方式</div>
+                <div class="rule-content">仅支持"一次性结清"，页面支持一键填充应还金额</div>
+              </div>
+            </div>
           </div>
-          <div class="bullets">
-            <ul>
-              <li>活期：日利率 <?= number_format(($data['settingsForDisplay']['demand_interest_rate'] ?? 0), 3) ?>%/日；无固定期限，随时存取（不收手续费）。</li>
-              <li>利息去向：活期利息计入“活期账户余额”；定期利息发放至“用户余额”；贷款利息计入“贷款欠款”。</li>
-            </ul>
+
+          <!-- 利率说明 -->
+          <div class="rules-section">
+            <h4 class="rules-title">💰 利率说明</h4>
+            <div class="rate-grid">
+              <div class="rate-card">
+                <div class="rate-header">活期存款</div>
+                <div class="rate-value"><?= number_format(($data['settingsForDisplay']['demand_interest_rate'] ?? 0) * 100, 3) ?>%/日</div>
+                <div class="rate-desc">无固定期限，随时存取，不收手续费</div>
+              </div>
+              <div class="rate-card">
+                <div class="rate-header">定期存款</div>
+                <div class="rate-value">
+                  <?php $fixedRates = $data['settingsForDisplay']['fixed_deposit_rates'] ?? []; if (!empty($fixedRates)): ?>
+                    <?php foreach ($fixedRates as $r): ?>
+                      <div class="rate-item"><?= (int)($r['term_days'] ?? 0) ?>天: <?= number_format((float)($r['interest_rate'] ?? 0) * 100, 3) ?>%</div>
+                    <?php endforeach; ?>
+                  <?php else: ?>
+                    <div class="rate-item">暂未配置</div>
+                  <?php endif; ?>
+                </div>
+                <div class="rate-desc">提前支取手续费: <?= number_format(($data['penaltyRate'] ?? 0)*100, 2) ?>%</div>
+              </div>
+              <div class="rate-card">
+                <div class="rate-header">贷款</div>
+                <div class="rate-value">
+                  <?php $loanRates = $data['settingsForDisplay']['loan_interest_rates'] ?? []; if (!empty($loanRates)): ?>
+                    <?php foreach ($loanRates as $r): ?>
+                      <div class="rate-item"><?= (int)($r['term_days'] ?? 0) ?>天: <?= number_format((float)($r['loan_rate'] ?? 0) * 100, 2) ?>%</div>
+                    <?php endforeach; ?>
+                  <?php else: ?>
+                    <div class="rate-item">暂未配置</div>
+                  <?php endif; ?>
+                </div>
+                <div class="rate-desc">逾期罚息: <?= number_format(($data['settingsForDisplay']['overdue_penalty_rate'] ?? 0) * 100, 2) ?>%/日</div>
+              </div>
+            </div>
           </div>
-          <?php $fixedRates = $data['settingsForDisplay']['fixed_deposit_rates'] ?? []; if (!empty($fixedRates)): ?>
-          <div class="rows">
-            <div class="row-line"><div class="name">定期利率分档</div><div class="value"><div class="rate-lines">
-              <?php foreach ($fixedRates as $r): ?>
-                <span class="item"><?= (int)($r['term_days'] ?? 0) ?> 天 · <?= number_format((float)($r['interest_rate'] ?? 0), 3) ?>%</span>
-              <?php endforeach; ?>
-            </div></div></div>
+
+          <!-- 利息去向 -->
+          <div class="rules-section">
+            <h4 class="rules-title">🔄 利息去向</h4>
+            <div class="interest-flow">
+              <div class="flow-item">
+                <div class="flow-icon">💳</div>
+                <div class="flow-text">活期利息 → 活期账户余额</div>
+              </div>
+              <div class="flow-item">
+                <div class="flow-icon">💰</div>
+                <div class="flow-text">定期利息 → 用户余额</div>
+              </div>
+              <div class="flow-item">
+                <div class="flow-icon">📈</div>
+                <div class="flow-text">贷款利息 → 贷款欠款</div>
+              </div>
+            </div>
           </div>
-          <?php endif; ?>
-          <div class="bullets">
-            <ul>
-              <li>定期提前支取：手续费 <?= number_format(($data['penaltyRate'] ?? 0)*100, 2) ?>%（仅定期生效）。</li>
-              <li>定期利息说明：利息按日结算发放；“应计至今”为参考值，未到结息日部分不额外发放，已发放利息不受影响。</li>
-              <li>提前还款：仅支持“一次性结清”，结清额 = 当前欠款 + 截至今日应计利息（页面支持一键填充应还金额）。</li>
-              <li>贷款限制：同一时间仅允许一笔进行中的贷款，可随时提前还款。</li>
-            </ul>
+
+          <!-- 重要提示 -->
+          <div class="rules-section">
+            <h4 class="rules-title">⚠️ 重要提示</h4>
+            <div class="tips-list">
+              <div class="tip-item">• 定期利息按日结算发放，"应计至今"为参考值，未到结息日部分不额外发放</div>
+              <div class="tip-item">• 提前还款结清额 = 当前欠款 + 截至今日应计利息</div>
+              <div class="tip-item">• 贷款逾期将产生额外罚息，请及时还款</div>
+              <div class="tip-item">• 定期存款提前支取将扣除手续费，请谨慎操作</div>
+            </div>
           </div>
-        </section>
       </div>
     </div>
 <script>
@@ -759,6 +960,25 @@ function setLoading(btn){
     btn.style.opacity = .8;
     btn.disabled = true;
     return true;
+}
+
+function toggleDeposits(){
+    var hidden = document.getElementById('depositsHidden');
+    var btn = document.getElementById('toggleBtn');
+    var text = document.getElementById('toggleText');
+    var icon = document.getElementById('toggleIcon');
+    
+    if(hidden.style.display === 'none'){
+        hidden.style.display = 'grid';
+        text.textContent = '收起';
+        icon.textContent = '▲';
+        btn.classList.add('expanded');
+    } else {
+        hidden.style.display = 'none';
+        text.textContent = text.textContent.replace('收起', '展开更多');
+        icon.textContent = '▼';
+        btn.classList.remove('expanded');
+    }
 }
 
 // 简单模态框控制
@@ -828,8 +1048,8 @@ window.addEventListener('resize', debounce(equalizeRow2, 120));
       <div class="form-group">
         <label class="form-label">贷款期限</label>
         <select name="term_days" class="form-select" required>
-          <?php foreach ($data['interestRates'] as $rate): ?>
-            <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= ($rate['loan_rate'] * 100) ?>%)</option>
+          <?php foreach ($data['loanRates'] as $rate): ?>
+            <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= number_format($rate['loan_rate'] * 100, 2) ?>%)</option>
           <?php endforeach; ?>
         </select>
       </div>
@@ -871,8 +1091,8 @@ window.addEventListener('resize', debounce(equalizeRow2, 120));
       <div class="form-group">
         <label class="form-label">存款期限</label>
         <select name="term_days" class="form-select" required>
-          <?php foreach ($data['interestRates'] as $rate): ?>
-            <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= ($rate['deposit_rate'] * 100) ?>%)</option>
+          <?php foreach ($data['depositRates'] as $rate): ?>
+            <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= number_format($rate['deposit_rate'] * 100, 2) ?>%)</option>
           <?php endforeach; ?>
         </select>
       </div>
