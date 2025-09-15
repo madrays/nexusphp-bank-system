@@ -227,6 +227,13 @@ class BankSystemRepository extends BasePlugin
                 return;
             }
 
+            // 依据最低用户等级控制可见性
+            global $CURUSER;
+            $minClass = get_setting('bank_system.min_user_class', \App\Models\User::CLASS_USER);
+            if (empty($CURUSER) || (int)($CURUSER['class'] ?? -1) < (int)$minClass) {
+                return;
+            }
+
             echo '<script>
             document.addEventListener("DOMContentLoaded", function() {
                 var mainMenu = document.querySelector("#mainmenu");

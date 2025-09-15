@@ -43,9 +43,11 @@ class SettingsManager
 
                     Forms\Components\Select::make('bank_system.min_user_class')
                         ->label('最低用户等级')
-                        ->options(self::getUserClassOptions())
+                        ->options(function(){ return self::getUserClassOptions(); })
+                        ->searchable()
+                        ->preload()
                         ->default(\App\Models\User::CLASS_USER)
-                        ->helperText('允许使用银行系统的最低用户等级'),
+                        ->helperText('与 NP 后台一致，包含特殊组（如 VIP、养老、维护/开发等）'),
                 ])
                 ->columns(2),
 
@@ -210,9 +212,29 @@ class SettingsManager
     protected static function getUserClassOptions(): array
     {
         try {
+            // 优先：直接使用 get_user_class_name 全扫描，涵盖特殊组（VIP/养老/维护/开发等）
+            if (function_exists('get_user_class_name')) {
+                $start = defined('UC_PEASANT') ? (int)constant('UC_PEASANT') : 0;
+                $end = $start + 255; // 合理上限，未知值将返回空
+                $options = [];
+                for ($i = $start; $i <= $end; $i++) {
+                    $label = get_user_class_name($i, false, false, true, []);
+                    if (is_string($label) && trim($label) !== '') {
+                        $options[$i] = $label;
+                    }
+                }
+                if (!empty($options)) {
+                    return $options;
+                }
+            }
+
+            // 次选：新架构提供的全量/区间方法
+            if (method_exists(\App\Models\User::class, 'listAllClass')) {
+                return \App\Models\User::listAllClass();
+            }
             return \App\Models\User::listClass(\App\Models\User::CLASS_USER, \App\Models\User::CLASS_NEXUS_MASTER);
         } catch (\Exception $e) {
-            // 如果获取失败，返回默认选项
+            // 最终回退：基础常量
             return [
                 \App\Models\User::CLASS_USER => 'User',
                 \App\Models\User::CLASS_POWER_USER => 'Power User',

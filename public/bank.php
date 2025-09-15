@@ -11,8 +11,13 @@ if (!$CURUSER) {
 }
 
 // 检查用户等级权限
+// 使用 NP 的等级顺序进行校验，避免常量值非线性导致比较失真
 $minClass = get_setting('bank_system.min_user_class', \App\Models\User::CLASS_USER);
-if ($CURUSER['class'] < $minClass) {
+$classOrder = array_keys(\App\Models\User::listClass(\App\Models\User::CLASS_USER, \App\Models\User::CLASS_NEXUS_MASTER));
+$userPos = array_search((int)$CURUSER['class'], $classOrder, true);
+$minPos = array_search((int)$minClass, $classOrder, true);
+if ($userPos === false || $minPos === false || $userPos < $minPos) {
+    header('HTTP/1.1 403 Forbidden');
     stdmsg("权限不足", "您的用户等级不足以访问银行系统。");
     stdfoot();
     exit;
