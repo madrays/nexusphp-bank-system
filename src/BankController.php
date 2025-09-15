@@ -56,25 +56,20 @@ class BankController
         $maxLoanAmount = $this->bankRepo->calculateMaxLoanAmount($userId);
         $currentLoan = $this->bankRepo->getUserLoan($userId);
         $deposits = $this->bankRepo->getUserDeposits($userId);
+        $loanHistory = $this->bankRepo->getUserLoanHistory($userId);
 
         // 获取利率设置
         $interestRates = get_setting('bank_system.interest_rates') ?: [];
         $minLoanAmount = get_setting('bank_system.min_loan_amount') ?: 1000;
         $minDepositAmount = get_setting('bank_system.min_deposit_amount') ?: 5000;
 
-        // 计算：贷款应计利息至今与一次性结清金额（仅展示用）
+        // 计算：贷款应计利息至今（仅已入账）与一次性结清金额（展示用）
         $loanAccrued = 0.0; $loanPayoff = null;
         if ($currentLoan) {
-            $today = date('Y-m-d');
-            // 利息计算截止到前一天，不包含当天
-            $endDate = date('Y-m-d', strtotime($today) - 86400);
-            if (!empty($currentLoan['due_date'])) {
-                $dueYmd = date('Y-m-d', strtotime($currentLoan['due_date']));
-                if ($dueYmd < $endDate) { $endDate = $dueYmd; }
-            }
-            $lastDate = $currentLoan['last_interest_date'] ?: date('Y-m-d', strtotime($currentLoan['created_at']));
-            $days = max(0, floor((strtotime($endDate) - strtotime($lastDate)) / 86400));
-            $loanAccrued = (float)$currentLoan['remaining_amount'] * (float)$currentLoan['interest_rate'] * (int)$days;
+            $loanId = (int)$currentLoan['id'];
+            // 已入账利息
+            $sumRows = \Nexus\Database\NexusDB::select("SELECT COALESCE(SUM(amount),0) AS s FROM bank_interest_records WHERE type='loan' AND reference_id = $loanId");
+            $loanAccrued = round((float)($sumRows[0]['s'] ?? 0), 2);
             $loanPayoff = round((float)$currentLoan['remaining_amount'] + $loanAccrued, 2);
         }
 
@@ -96,7 +91,7 @@ class BankController
 
         return compact(
             'bonusName', 'currentBonus', 'hourlyBonus', 'maxLoanAmount', 
-            'currentLoan', 'deposits', 'interestRates', 'minLoanAmount', 'minDepositAmount',
+            'currentLoan', 'deposits', 'loanHistory', 'interestRates', 'minLoanAmount', 'minDepositAmount',
             'loanAccrued', 'loanPayoff'
         );
     }
@@ -182,17 +177,10 @@ class BankController
             return;
         }
 
-        // 计算至今应计利息与一次性应还
-        $today = date('Y-m-d');
-        // 利息计算截止到前一天，不包含当天
-        $endDate = date('Y-m-d', strtotime($today) - 86400);
-        if (!empty($loan['due_date'])) {
-            $dueYmd = date('Y-m-d', strtotime($loan['due_date']));
-            if ($dueYmd < $endDate) { $endDate = $dueYmd; }
-        }
-        $lastDate = $loan['last_interest_date'] ?: date('Y-m-d', strtotime($loan['created_at']));
-        $days = max(0, floor((strtotime($endDate) - strtotime($lastDate)) / 86400));
-        $accrued = (float)$loan['remaining_amount'] * (float)$loan['interest_rate'] * (int)$days;
+        // 计算至今应计利息（仅记录汇总）与一次性应还
+        $loanId = (int)$loan['id'];
+        $sumRows = \Nexus\Database\NexusDB::select("SELECT COALESCE(SUM(amount),0) AS s FROM bank_interest_records WHERE type='loan' AND reference_id = $loanId");
+        $accrued = round((float)($sumRows[0]['s'] ?? 0), 2);
         $required = round((float)$loan['remaining_amount'] + $accrued, 2);
 
         // 强制一次性结清
@@ -216,14 +204,12 @@ class BankController
             // 扣除总额
             $this->bankRepo->updateUserBonus($CURUSER['id'], -$required, "贷款结清：{$required} {$bonusName}");
 
-            // 记录今天应计利息
-            if ($accrued > 0) {
-                $this->bankRepo->recordInterest($CURUSER['id'], 'loan', (int)$loan['id'], $accrued, (float)$loan['interest_rate']);
-            }
+            // 当日计息已通过调度入账，无需再额外入账
 
-            // 更新贷款为已结清，并推进 last_interest_date
+            // 更新贷款为已结清，并推进 last_interest_date 到今天或到期日（取早者）
             $paidAt = date('Y-m-d H:i:s');
-            $sql = "UPDATE bank_loans SET remaining_amount = 0, status = 'paid', paid_at = '$paidAt', last_interest_date = '$endDate', updated_at = '$paidAt' WHERE id = {$loan['id']}";
+            $settleDateYmd = $eligibleEnd;
+            $sql = "UPDATE bank_loans SET remaining_amount = 0, status = 'paid', paid_at = '$paidAt', last_interest_date = '$settleDateYmd', updated_at = '$paidAt' WHERE id = {$loan['id']}";
             \Nexus\Database\NexusDB::statement($sql);
 
             $this->returnWithSuccess('贷款已一次性结清');

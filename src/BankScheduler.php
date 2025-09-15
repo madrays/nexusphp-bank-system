@@ -183,17 +183,21 @@ class BankScheduler
         $today = date('Y-m-d');
         $lastInterestDate = $loan['last_interest_date'] ?: date('Y-m-d', strtotime($loan['created_at']));
 
-        // 计息截止到到期日（到期日之后不再作为'active'计息）
+        // 计息截止策略：
+        // - 正常期（active）：截止 min(今天, 到期日)
+        // - 逾期期（overdue）：截止 今天（到期后每日持续计罚息，直到结清）
         $endDate = $today;
-        if (!empty($loan['due_date'])) {
+        if (($loan['status'] ?? 'active') !== 'overdue' && !empty($loan['due_date'])) {
             $dueYmd = date('Y-m-d', strtotime($loan['due_date']));
             if ($dueYmd < $endDate) {
                 $endDate = $dueYmd;
             }
         }
 
-        // 计算需要计息的天数
-        $daysDiff = (strtotime($endDate) - strtotime($lastInterestDate)) / 86400;
+        // 计息策略：包含“当日入账”。
+        // 若从未计息，则让 lastInterestDate 向前移动一天，保证今天至少记 1 天。
+        $lastYmd = $loan['last_interest_date'] ? date('Y-m-d', strtotime($loan['last_interest_date'])) : date('Y-m-d', strtotime($loan['created_at'] . ' -1 day'));
+        $daysDiff = (strtotime($endDate) - strtotime($lastYmd)) / 86400;
 
         if ($daysDiff >= 1 && (float)$loan['interest_rate'] > 0) {
             $days = (int)floor($daysDiff);
@@ -209,10 +213,8 @@ class BankScheduler
             $totalInterest = $dailyInterest * $days;
 
             if ($totalInterest > 0) {
-                // 增加欠款
-                $newRemainingAmount = (float)$loan['remaining_amount'] + (float)$totalInterest;
-
-                $sql = "UPDATE bank_loans SET remaining_amount = $newRemainingAmount, last_interest_date = '$endDate', updated_at = NOW() WHERE id = {$loan['id']}";
+                // 不并入本金，仅推进计息日期并记录利息（当日已入账）
+                $sql = "UPDATE bank_loans SET last_interest_date = '$endDate', updated_at = NOW() WHERE id = {$loan['id']}";
                 \Nexus\Database\NexusDB::statement($sql);
 
                 // 记录利息（使用实际利率）
@@ -234,8 +236,13 @@ class BankScheduler
         $sql = "UPDATE bank_loans SET status = 'overdue', updated_at = NOW() WHERE status = 'active' AND due_date < '$today'";
         \Nexus\Database\NexusDB::statement($sql);
 
-        // 自动扣款处理严重逾期的贷款
-        $sql = "SELECT * FROM bank_loans WHERE status = 'overdue' AND due_date < '$overdueDate'";
+        // 自动扣款策略：
+        // - 若允许负余额：达到严重逾期阈值后一次性扣清
+        // - 若不允许负余额：逾期即开始、每次调度都尽可能扣除现有资金（持续扣）
+        $allowNegative = (bool)(get_setting('bank_system.allow_negative_balance') ?: false);
+        $sql = $allowNegative
+            ? "SELECT * FROM bank_loans WHERE status = 'overdue' AND due_date < '$overdueDate'"
+            : "SELECT * FROM bank_loans WHERE status = 'overdue'";
         $severeOverdueLoans = \Nexus\Database\NexusDB::select($sql);
 
         foreach ($severeOverdueLoans as $loan) {
@@ -250,34 +257,50 @@ class BankScheduler
      */
     private function autoDeductOverdueLoan(array $loan): void
     {
-        $userBonus = $this->bankRepo->getUserBonus($loan['user_id']);
-        $deductAmount = min($userBonus, $loan['remaining_amount']);
-        
-        if ($deductAmount > 0) {
-            // 扣除用户魔力
-            $bonusName = $this->bankRepo->getBonusName();
-            $this->bankRepo->updateUserBonus(
-                $loan['user_id'], 
-                -$deductAmount, 
-                "逾期贷款自动扣款：{$deductAmount} {$bonusName}"
-            );
+        $allowNegative = (bool)(get_setting('bank_system.allow_negative_balance') ?: false);
 
-            // 更新贷款余额
-            $newRemainingAmount = $loan['remaining_amount'] - $deductAmount;
-            
-            if ($newRemainingAmount <= 0) {
-                // 贷款已还清
-                $paidAt = date('Y-m-d H:i:s');
-                $sql = "UPDATE bank_loans SET remaining_amount = 0, status = 'paid', paid_at = '$paidAt', updated_at = '$paidAt' WHERE id = {$loan['id']}";
-                \Nexus\Database\NexusDB::statement($sql);
-            } else {
-                $sql = "UPDATE bank_loans SET remaining_amount = $newRemainingAmount, updated_at = NOW() WHERE id = {$loan['id']}";
-                \Nexus\Database\NexusDB::statement($sql);
-            }
-
-            // 发送通知
-            $this->sendOverdueNotification($loan['user_id'], $deductAmount, $newRemainingAmount);
+        // 1) 先扣活期余额（不动定期）
+        $defaultRate = (float)(get_setting('bank_system.demand_interest_rate') ?: 0);
+        $demand = $this->bankRepo->getOrCreateDemandAccount((int)$loan['user_id'], $defaultRate);
+        $demandBal = (float)($demand['balance'] ?? 0);
+        $fromDemand = min($demandBal, (float)$loan['remaining_amount']);
+        if ($fromDemand > 0) {
+            $newBal = $demandBal - $fromDemand;
+            $upd = "UPDATE bank_demand_accounts SET balance = $newBal, updated_at = NOW() WHERE id = {$demand['id']}";
+            \Nexus\Database\NexusDB::statement($upd);
         }
+
+        $remainingAfterDemand = (float)$loan['remaining_amount'] - $fromDemand;
+        $deductFromBonus = 0.0;
+        if ($remainingAfterDemand > 0) {
+            // 2) 再扣用户站点余额（seedbonus）
+            $userBonus = $this->bankRepo->getUserBonus($loan['user_id']);
+            $deductFromBonus = $allowNegative ? $remainingAfterDemand : min($userBonus, $remainingAfterDemand);
+            if ($deductFromBonus > 0) {
+                $bonusName = $this->bankRepo->getBonusName();
+                $comment = $allowNegative ? "逾期贷款自动扣款（可负余额）：{$deductFromBonus} {$bonusName}" : "逾期贷款自动扣款：{$deductFromBonus} {$bonusName}";
+                $this->bankRepo->updateUserBonus($loan['user_id'], -$deductFromBonus, $comment);
+            }
+        }
+
+        $totalDeducted = $fromDemand + $deductFromBonus;
+        if ($totalDeducted <= 0) {
+            return;
+        }
+
+        // 更新贷款余额
+        $newRemainingAmount = (float)$loan['remaining_amount'] - $totalDeducted;
+        if ($newRemainingAmount <= 0) {
+            $paidAt = date('Y-m-d H:i:s');
+            $sql = "UPDATE bank_loans SET remaining_amount = 0, status = 'paid', paid_at = '$paidAt', updated_at = '$paidAt' WHERE id = {$loan['id']}";
+            \Nexus\Database\NexusDB::statement($sql);
+        } else {
+            $sql = "UPDATE bank_loans SET remaining_amount = $newRemainingAmount, updated_at = NOW() WHERE id = {$loan['id']}";
+            \Nexus\Database\NexusDB::statement($sql);
+        }
+
+        // 发送通知
+        $this->sendOverdueNotification($loan['user_id'], $totalDeducted, max(0, $newRemainingAmount));
     }
 
     /**

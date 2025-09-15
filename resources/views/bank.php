@@ -245,6 +245,16 @@ $bonusName = $bonusName ?? '魔力';
 .pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
 .pill{background:#eef2ff;color:#1d4ed8;border:1px solid #dbeafe;border-radius:999px;padding:2px 8px;font-size:12px}
 .pill.blue{background:#e0f2fe;color:#0369a1;border-color:#bae6fd}
+.pill.green{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+.pill.red{background:#fee2e2;color:#991b1b;border-color:#fecaca}
+.pill.gray{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+.dep-meta{font-size:12px;color:#64748b;margin-top:6px}
+.deposit-card .dep-meta + .dep-meta{margin-top:4px}
+/* 强调色（与定期卡一致风格） */
+.value-strong{font-weight:800;color:#0f172a}
+.value-blue{color:#0ea5e9}
+.value-emerald{color:#059669}
+.value-rose{color:#dc2626}
 
 /* 站点概览紧凑样式 */
 .overview-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:12px}
@@ -522,8 +532,7 @@ $bonusName = $bonusName ?? '魔力';
                   </div>
                   
                   <div class="loan-actions">
-                    <button type="button" class="action-btn primary" onclick="document.getElementById('repay_amount').focus()">立即还款</button>
-                    <button type="button" class="action-btn secondary" onclick="document.getElementById('repay_amount').scrollIntoView({behavior:'smooth',block:'center'})">查看还款表单</button>
+                    <button type="button" class="action-btn primary" onclick="document.getElementById('loanHistory').scrollIntoView({behavior:'smooth',block:'start'})">查看贷款历史</button>
                   </div>
                 </div>
                 <div class="tabs">
@@ -779,6 +788,88 @@ $bonusName = $bonusName ?? '魔力';
     </div>
     <?php endif; ?>
 
+    <!-- 贷款历史（折叠，默认显示3条） -->
+    <div class="panel" id="loanHistory">
+        <div class="panel-title">我的贷款历史</div>
+        <?php $loans = $data['loanHistory'] ?? []; if (empty($loans)): ?>
+            <div class="text-muted" style="padding: 12px;">暂无贷款记录</div>
+        <?php else: ?>
+            <?php 
+              $maxLoanVisible = 3;
+              $visibleLoans = array_slice($loans, 0, $maxLoanVisible);
+              $loanHiddenCount = max(0, count($loans) - $maxLoanVisible);
+            ?>
+            <div class="deposits-grid" id="loanHistoryGrid">
+                <?php foreach ($visibleLoans as $hist): ?>
+                    <div class="deposit-card">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                            <div style="font-weight:800;color:#0f172a;">贷款 <?= number_format($hist['amount'],2) ?> <?= $data['bonusName'] ?></div>
+                            <?php 
+                              $st = $hist['status'] ?? ''; 
+                              $mapLbl = ['active'=>'进行中','paid'=>'已结清','overdue'=>'已逾期','defaulted'=>'违约'];
+                              $mapCls = ['active'=>'blue','paid'=>'green','overdue'=>'red','defaulted'=>'gray'];
+                              $lbl = $mapLbl[$st] ?? $st; $cls = $mapCls[$st] ?? 'gray';
+                              $termTxt = isset($hist['term_days']) ? ((int)$hist['term_days']).'天' : '';
+                            ?>
+                            <span class="pill <?= 'pill-'.$cls ?>"><?= htmlspecialchars($lbl . ($termTxt?(' · '.$termTxt):'')) ?></span>
+                        </div>
+                        <div class="dep-meta">借款时间：<span class="value-strong"><?= htmlspecialchars($hist['created_at']) ?></span></div>
+                        
+                        <div class="dep-meta">到期时间：<span class="value-strong"><?= htmlspecialchars($hist['due_date']) ?></span></div>
+                        <div class="dep-meta">还款时间：<span class="value-strong"><?= htmlspecialchars($hist['paid_at'] ?? '-') ?></span></div>
+                        <div class="dep-meta">当前剩余欠款：<span class="value-rose"><?= number_format($hist['remaining_amount'],2) ?></span> <?= $data['bonusName'] ?></div>
+                        <?php if (($hist['status'] ?? '') === 'active'): ?>
+                        <div class="dep-meta" style="display:flex;justify-content:space-between;align-items:center;">
+                            <span>利息汇总：<span class="value-emerald"><?= number_format((float)($hist['interest_sum'] ?? 0),2) ?></span> <?= $data['bonusName'] ?></span>
+                            <button type="button" class="btn btn-primary" onclick="var x=document.getElementById('repay_amount'); if(x){x.scrollIntoView({behavior:'smooth',block:'center'}); x.focus();}">去还款</button>
+                        </div>
+                        <?php else: ?>
+                        <div class="dep-meta">利息汇总：<span class="value-emerald"><?= number_format((float)($hist['interest_sum'] ?? 0),2) ?></span> <?= $data['bonusName'] ?></div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <?php if ($loanHiddenCount > 0): ?>
+            <div class="deposits-hidden" id="loanHistoryHidden" style="display:none;">
+                <?php foreach (array_slice($loans, $maxLoanVisible) as $hist): ?>
+                    <div class="deposit-card">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                            <div style="font-weight:800;color:#0f172a;">贷款 <?= number_format($hist['amount'],2) ?> <?= $data['bonusName'] ?></div>
+                            <?php 
+                              $st = $hist['status'] ?? ''; 
+                              $mapLbl = ['active'=>'进行中','paid'=>'已结清','overdue'=>'已逾期','defaulted'=>'违约'];
+                              $mapCls = ['active'=>'blue','paid'=>'green','overdue'=>'red','defaulted'=>'gray'];
+                              $lbl = $mapLbl[$st] ?? $st; $cls = $mapCls[$st] ?? 'gray';
+                              $termTxt = isset($hist['term_days']) ? ((int)$hist['term_days']).'天' : '';
+                            ?>
+                            <span class="pill <?= 'pill-'.$cls ?>"><?= htmlspecialchars($lbl . ($termTxt?(' · '.$termTxt):'')) ?></span>
+                        </div>
+                        <div class="dep-meta">借款时间：<span class="value-strong"><?= htmlspecialchars($hist['created_at']) ?></span></div>
+                        
+                        <div class="dep-meta">到期时间：<span class="value-strong"><?= htmlspecialchars($hist['due_date']) ?></span></div>
+                        <div class="dep-meta">还款时间：<span class="value-strong"><?= htmlspecialchars($hist['paid_at'] ?? '-') ?></span></div>
+                        <div class="dep-meta">当前剩余欠款：<span class="value-rose"><?= number_format($hist['remaining_amount'],2) ?></span> <?= $data['bonusName'] ?></div>
+                        <?php if (($hist['status'] ?? '') === 'active'): ?>
+                        <div class="dep-meta" style="display:flex;justify-content:space-between;align-items:center;">
+                            <span>利息汇总：<span class="value-emerald"><?= number_format((float)($hist['interest_sum'] ?? 0),2) ?></span> <?= $data['bonusName'] ?></span>
+                            <button type="button" class="btn btn-primary" onclick="var x=document.getElementById('repay_amount'); if(x){x.scrollIntoView({behavior:'smooth',block:'center'}); x.focus();}">去还款</button>
+                        </div>
+                        <?php else: ?>
+                        <div class="dep-meta">利息汇总：<span class="value-emerald"><?= number_format((float)($hist['interest_sum'] ?? 0),2) ?></span> <?= $data['bonusName'] ?></div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <div class="deposits-toggle" style="text-align:center; margin-top: 16px;">
+                <button class="btn btn-secondary" onclick="toggleLoanHistory()" id="toggleLoanBtn">
+                    <span id="toggleLoanText">展开更多 (<?= $loanHiddenCount ?> 笔)</span>
+                    <span class="toggle-icon">▾</span>
+                </button>
+            </div>
+            <?php endif; ?>
+        <?php endif; ?>
+    </div>
+
     <div class="row-spacer"></div>
     <!-- 第四行：站点概览（单独一行） -->
     <div class="bank-sections">
@@ -1013,6 +1104,23 @@ function showDepositTab(key){
 }
 function showLoanTab(key){
   // 目前只有一个面板，占位保留
+}
+
+function toggleLoanHistory(){
+  var hidden = document.getElementById('loanHistoryHidden');
+  var btn = document.getElementById('toggleLoanBtn');
+  var text = document.getElementById('toggleLoanText');
+  if(!hidden || !btn || !text){return;}
+  if(hidden.style.display === 'none'){
+    hidden.style.display = 'grid';
+    btn.classList.add('expanded');
+    text.textContent = '收起';
+  } else {
+    hidden.style.display = 'none';
+    btn.classList.remove('expanded');
+    var count = hidden.querySelectorAll('.deposit-card').length;
+    text.textContent = '展开更多 ('+count+' 笔)';
+  }
 }
 
 // 第二行两列等高（不影响布局流）

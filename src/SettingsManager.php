@@ -60,13 +60,6 @@ class SettingsManager
                             return nexus_trans('user.labels.seedbonus') ?: '魔力';
                         }),
 
-                    Forms\Components\TextInput::make('bank_system.loan_interest_rate')
-                        ->label('贷款日利率 (%)')
-                        ->numeric()
-                        ->step(0.01)
-                        ->default(0.1)
-                        ->helperText('贷款的日利率百分比'),
-
                     Forms\Components\Repeater::make('bank_system.loan_interest_rates')
                         ->label('贷款分级利率')
                         ->schema([
@@ -189,18 +182,23 @@ class SettingsManager
 
             Forms\Components\Section::make('风控设置')
                 ->schema([
+                    Forms\Components\Toggle::make('bank_system.allow_negative_balance')
+                        ->label('允许负余额扣款')
+                        ->default(false)
+                        ->helperText('开启：逾期达到阈值后一次性扣清（站点余额可为负）；关闭：逾期后每次定时任务尽可能扣现有余额，直至还清。'),
+
                     Forms\Components\TextInput::make('bank_system.overdue_penalty_rate')
                         ->label('逾期罚息率 (%)')
                         ->numeric()
                         ->step(0.01)
                         ->default(0.5)
-                        ->helperText('贷款逾期后的额外日罚息率'),
+                        ->helperText('贷款逾期后每日计息 = 日利率 + 罚息率；直至结清'),
 
                     Forms\Components\TextInput::make('bank_system.auto_deduct_days')
                         ->label('自动扣款天数')
                         ->numeric()
                         ->default(7)
-                        ->helperText('逾期多少天后自动从用户魔力中扣款'),
+                        ->helperText('允许负余额=开启：达到此天数后一次性扣清；关闭：逾期即开始每次定时任务持续扣'),
                 ])
                 ->columns(2),
         ];
@@ -239,7 +237,6 @@ class SettingsManager
             'show_in_navigation' => true,
             'min_user_class' => \App\Models\User::CLASS_USER,
             'loan_ratio' => 100,
-            'loan_interest_rate' => 0.1,
             'loan_interest_rates' => [
                 ['term_days' => 7, 'name' => '7天', 'loan_rate' => 0.08],
                 ['term_days' => 15, 'name' => '15天', 'loan_rate' => 0.10],
@@ -262,6 +259,7 @@ class SettingsManager
             ],
             'overdue_penalty_rate' => 0.5,
             'auto_deduct_days' => 7,
+            'allow_negative_balance' => false,
         ];
     }
 }

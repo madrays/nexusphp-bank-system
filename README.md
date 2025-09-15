@@ -188,13 +188,58 @@ composer dump-autoload
 
 ### 定时任务
 
-系统每小时自动执行以下任务：
+调度脚本：`run-bank-scheduler.sh`（包装 `bank-scheduler.php`，包含并发控制、日志与错误抑制）。
 
-1. **活期计息**：将利息计入活期账户余额
-2. **定期计息**：将利息发放到用户余额
-3. **贷款计息**：将利息计入贷款欠款
-4. **到期处理**：处理到期的存款和逾期的贷款
-5. **自动扣款**：对严重逾期的贷款执行自动扣款
+安装示例：
+
+```bash
+# 每分钟执行一次（开发/验证）
+./setup-cron.sh install --minute '*/1' --site-root /path/to/your/site --log-file /path/to/your/site/packages/nexusphp-bank-system/logs/bank_scheduler.log
+
+# 每小时第 5 分钟执行（生产推荐）
+./setup-cron.sh install --minute 5 --site-root /path/to/your/site --log-file /path/to/your/site/packages/nexusphp-bank-system/logs/bank_scheduler.log
+```
+
+验证与查看：
+
+```bash
+./setup-cron.sh show
+./setup-cron.sh verify --site-root /path/to/your/site --log-file /path/to/your/site/packages/nexusphp-bank-system/logs/bank_scheduler.log
+```
+
+系统每次运行会执行：
+
+1. **活期计息**：将利息按天计入活期余额
+2. **定期计息**：为 active 的定期入账利息（到期返本）
+3. **贷款计息**：
+   - 正常期：按“日利率”计息，封顶到到期日
+   - 逾期期：按“日利率+罚息率”每日持续计息，直到结清
+4. **逾期处理**：到期自动标记逾期
+5. **自动扣款**：
+   - 允许负余额=开启：达到阈值(`auto_deduct_days`)后一次性扣清
+   - 允许负余额=关闭：逾期后每次调度都尽可能扣现有余额（先活期、再站点余额），直至还清
+6. **存款到期返还与通知**：返还定期本金并推送通知（如开启）
+
+### 策略总览（贷款计息与扣款）
+
+- 放款当日：立即入账首日利息，`last_interest_date=今天`。
+- 每日计息：比较 `last_interest_date` 与今天，若跨日则将区间天数一次性入账；正常期封顶到到期日；逾期期每日持续按“日利率+罚息率”计息。
+- 展示口径：
+  - 当前欠款=本金(`remaining_amount`)
+  - 应计利息=已入账利息汇总（与数据库一致）
+  - 一次性结清需=本金+应计利息
+- 自动扣款两路径：
+  1) 允许负余额=开：逾期天数≥`auto_deduct_days`后“一次性扣清”（先活期，再站点余额，可负）。
+  2) 允许负余额=关：一旦逾期，每次定时任务都“尽可能扣除现有余额”（先活期，再站点余额），余额不足则保留欠款并持续扣到清零。
+
+时序举例：
+
+```
+T0 放款 -> 立即入账首日利息
+T1 每日调度 -> 若跨日则入账该自然日利息
+Td 到期 -> 状态=overdue；之后每日按(日利率+罚息率)入账，直到结清
+Tk 自动扣款 -> 依照两路径策略从活期→站点余额进行扣除
+```
 
 ## 使用说明
 

@@ -375,6 +375,19 @@ class BankSystemRepository extends BasePlugin
             $bonusName = $this->getBonusName();
             $this->updateUserBonus($userId, $amount, "银行贷款：{$amount} {$bonusName}");
 
+            // 借款当日立即入账一天利息，并推进 last_interest_date = 今天
+            $row = \Nexus\Database\NexusDB::select("SELECT id FROM bank_loans WHERE user_id = $userId ORDER BY id DESC LIMIT 1");
+            $loanId = (int)($row[0]['id'] ?? 0);
+            if ($loanId > 0 && $interestRate > 0) {
+                $todayYmd = date('Y-m-d');
+                $dailyInterest = round($amount * $interestRate, 2);
+                if ($dailyInterest > 0) {
+                    $this->recordInterest($userId, 'loan', $loanId, $dailyInterest, $interestRate);
+                }
+                $upd = "UPDATE bank_loans SET last_interest_date = '$todayYmd', updated_at = NOW() WHERE id = $loanId";
+                \Nexus\Database\NexusDB::statement($upd);
+            }
+
             return true;
         } catch (\Exception $e) {
             do_log("[BANK_SYSTEM] Failed to create loan: " . $e->getMessage(), 'error');
@@ -465,6 +478,36 @@ class BankSystemRepository extends BasePlugin
     }
 
     /**
+     * 获取用户贷款历史（含进行中、已结清、逾期等）
+     */
+    public function getUserLoanHistory(int $userId): array
+    {
+        $loans = \Nexus\Database\NexusDB::select("SELECT * FROM bank_loans WHERE user_id = $userId ORDER BY created_at DESC");
+        if (empty($loans)) { return []; }
+
+        // 汇总每笔贷款的利息记录
+        $sumRows = \Nexus\Database\NexusDB::select(
+            "SELECT reference_id, COALESCE(SUM(amount),0) AS s 
+             FROM bank_interest_records 
+             WHERE user_id = $userId AND type='loan' 
+             GROUP BY reference_id"
+        );
+        $loanIdToInterest = [];
+        foreach ($sumRows as $r) {
+            $loanIdToInterest[(int)$r['reference_id']] = (float)$r['s'];
+        }
+
+        // 注入利息汇总字段
+        foreach ($loans as &$loan) {
+            $lid = (int)$loan['id'];
+            $loan['interest_sum'] = $loanIdToInterest[$lid] ?? 0.0;
+        }
+        unset($loan);
+
+        return $loans;
+    }
+
+    /**
      * 聚合仪表盘数据（供 public/bank.php 旧入口使用）
      */
     public function getDashboardData(int $userId): array
@@ -497,29 +540,14 @@ class BankSystemRepository extends BasePlugin
         }
         unset($dep);
 
-        // 贷款实时应计利息与一次性结清额
+        // 贷款应计利息（已入账）与一次性结清额
         $loanAccrued = 0.0;
         $loanPayoff = null;
         if ($currentLoan && in_array($currentLoan['status'], ['active','overdue'], true)) {
-            $startStr = $currentLoan['last_interest_date'] ?: $currentLoan['created_at'];
-            $startTs = strtotime(date('Y-m-d', strtotime($startStr)));
-            // 利息计算截止到前一天，不包含当天
-            $endTs = strtotime(date('Y-m-d', $nowTs - 86400));
-            if (!empty($currentLoan['due_date'])) {
-                $dueTs = strtotime($currentLoan['due_date']);
-                if ($dueTs < $endTs) { $endTs = $dueTs; }
-            }
-            $elapsed = max(0, $endTs - $startTs);
-            $daysFloat = $elapsed / 86400;
-            
-            // 计算实际利率：正常利率 + 逾期罚息率（如果逾期）
-            $actualRate = (float)$currentLoan['interest_rate'];
-            if ($currentLoan['status'] === 'overdue') {
-                $penaltyRate = (float)($settings['overdue_penalty_rate'] ?? 0.005); // 已经是小数
-                $actualRate += $penaltyRate;
-            }
-            
-            $loanAccrued = round((float)$currentLoan['remaining_amount'] * $actualRate * $daysFloat, 2);
+            // 已入账利息（从利息记录汇总）
+            $loanId = (int)$currentLoan['id'];
+            $sumRows = \Nexus\Database\NexusDB::select("SELECT COALESCE(SUM(amount),0) AS s FROM bank_interest_records WHERE type='loan' AND reference_id = $loanId");
+            $loanAccrued = round((float)($sumRows[0]['s'] ?? 0), 2);
             $loanPayoff = round((float)$currentLoan['remaining_amount'] + $loanAccrued, 2);
         }
 
@@ -527,6 +555,7 @@ class BankSystemRepository extends BasePlugin
         $siteOverview = $this->getSiteOverview();
         $recentInterest = $this->getRecentInterest($userId, 9);
         $maturingDeposits = $this->getMaturingDeposits($userId, 7);
+        $loanHistory = $this->getUserLoanHistory($userId);
 
         $settingsForDisplay = [
             'demand_interest_rate' => (float)($settings['demand_interest_rate'] ?? 0),
@@ -590,6 +619,7 @@ class BankSystemRepository extends BasePlugin
             'maturingDeposits' => $maturingDeposits,
             'siteOverview' => $siteOverview,
             'settingsForDisplay' => $settingsForDisplay,
+            'loanHistory' => $loanHistory,
             'userOverview' => [
                 'bonus' => $currentBonus,
                 'demand_balance' => (float)($demandAccount['balance'] ?? 0),
@@ -617,7 +647,7 @@ class BankSystemRepository extends BasePlugin
 		];
 	}
 
-	private function getOrCreateDemandAccount(int $userId, float $defaultRate): array
+	public function getOrCreateDemandAccount(int $userId, float $defaultRate): array
 	{
 		$rows = \Nexus\Database\NexusDB::select("SELECT * FROM bank_demand_accounts WHERE user_id = $userId LIMIT 1");
 		if (!empty($rows)) return $rows[0];
@@ -677,7 +707,6 @@ class BankSystemRepository extends BasePlugin
                 'enabled' => true,
                 'show_in_navigation' => true,
                 'demand_interest_rate' => 0.01,
-                'loan_interest_rate' => 0.1,
                 'loan_ratio' => 24,
                 'loan_ratio_constant' => 0,
                 'early_withdrawal_penalty' => 0.1,
@@ -695,7 +724,6 @@ class BankSystemRepository extends BasePlugin
 
             // 类型转换和百分比到小数转换
             $settings['demand_interest_rate'] = (float)$settings['demand_interest_rate'] / 100;
-            $settings['loan_interest_rate'] = (float)$settings['loan_interest_rate'] / 100;
             $settings['loan_ratio'] = (float)$settings['loan_ratio'];
             $settings['loan_ratio_constant'] = (float)$settings['loan_ratio_constant'];
             $settings['early_withdrawal_penalty'] = (float)$settings['early_withdrawal_penalty'] / 100;
@@ -724,7 +752,6 @@ class BankSystemRepository extends BasePlugin
             return [
                 'enabled' => true,
                 'demand_interest_rate' => 0.01,
-                'loan_interest_rate' => 0.08,
                 'loan_ratio' => 24,
                 'loan_ratio_constant' => 0,
                 'early_withdrawal_penalty' => 0.1,
