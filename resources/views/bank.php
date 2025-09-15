@@ -580,7 +580,12 @@ $bonusName = $bonusName ?? '魔力';
                             <?php endif; ?>
                         </div>
                         <?php if (!empty($data['loanRates'])): ?>
-                            <button type="submit" class="btn btn-primary">提交申请</button>
+                            <?php if (($data['currentBonus'] ?? 0) < 0): ?>
+                                <div class="muted" style="margin-top:6px;">当前<?= $data['bonusName'] ?>为负，暂不可申请贷款</div>
+                                <button type="button" class="btn btn-secondary" disabled>暂不可用</button>
+                            <?php else: ?>
+                                <button type="submit" class="btn btn-primary">提交申请</button>
+                            <?php endif; ?>
                         <?php else: ?>
                             <button type="button" class="btn btn-secondary" disabled>暂不可用</button>
                         <?php endif; ?>
@@ -1049,7 +1054,8 @@ function setLoading(btn){
     btn.dataset.old = old;
     btn.innerHTML = '处理中…';
     btn.style.opacity = .8;
-    btn.disabled = true;
+    // 避免某些浏览器禁用提交按钮会阻止提交，延迟禁用
+    setTimeout(function(){ try{ btn.disabled = true; }catch(e){} }, 50);
     return true;
 }
 

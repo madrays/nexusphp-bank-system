@@ -778,7 +778,9 @@ class BankSystemRepository extends BasePlugin
         }
 
         try {
-            $penaltyRate = get_setting('bank_system.early_withdrawal_penalty') ?: 0.1; // 默认10%手续费
+            // 使用统一的设置读取，确保百分比已转换为小数
+            $settings = $this->getSettings();
+            $penaltyRate = (float)($settings['early_withdrawal_penalty'] ?? 0.1); // 小数，如 0.01 代表 1%
             $penalty = $deposit['amount'] * $penaltyRate;
             $returnAmount = $deposit['amount'] - $penalty;
 

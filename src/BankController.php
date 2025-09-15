@@ -115,6 +115,14 @@ class BankController
         $minAmount = get_setting('bank_system.min_loan_amount') ?: 1000;
         $maxAmount = $this->bankRepo->calculateMaxLoanAmount($CURUSER['id']);
 
+        // 余额为负禁止申请贷款
+        $currentBonus = $this->bankRepo->getUserBonus($CURUSER['id']);
+        if ($currentBonus < 0) {
+            $bonusName = $this->bankRepo->getBonusName();
+            $this->returnWithError("当前{$bonusName}为负，暂不可申请贷款");
+            return;
+        }
+
         if ($amount < $minAmount) {
             $bonusName = $this->bankRepo->getBonusName();
             $this->returnWithError("贷款金额不能少于 {$minAmount} {$bonusName}");
