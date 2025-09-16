@@ -459,9 +459,9 @@ $bonusName = $bonusName ?? '魔力';
                     <div class="k" style="font-size:12px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= $d ?></div>
                   </div>
                   <div class="amt"><?= number_format($amt, 2) ?></div>
-                </div>
+        </div>
               <?php } ?>
-            </div>
+        </div>
         </div>
     </div>
 
@@ -539,8 +539,8 @@ $bonusName = $bonusName ?? '魔力';
                     <button class="tab-btn active" type="button" onclick="showLoanTab('repay')">提前还款（一次性结清）</button>
                 </div>
                 <div id="loan-tab-repay">
-                    <form method="post" action="/bank-repay.php">
-                        <div class="form-group">
+                <form method="post" action="/bank-repay.php">
+                    <div class="form-group">
                             <label class="form-label">结清金额</label>
                             <input type="number" name="amount" id="repay_amount" class="form-input" step="0.01" min="0.01" max="<?= $data['currentBonus'] ?>" placeholder="输入一次性结清金额" required>
                             <small>当前欠款 + 应计利息至今 = <?= $payoff!==null?number_format($payoff,2):'-' ?> <?= $data['bonusName'] ?></small>
@@ -550,35 +550,35 @@ $bonusName = $bonusName ?? '魔力';
                           <button type="button" class="btn" onclick="document.getElementById('repay_amount').value='<?= number_format($payoff,2,'.','') ?>'">填充应还</button>
                           <?php endif; ?>
                           <button type="submit" class="btn btn-success">立即结清</button>
-                        </div>
-                    </form>
+                    </div>
+                </form>
                 </div>
             <?php else: ?>
                 <div class="tabs">
                     <button class="tab-btn active" type="button" onclick="showLoanTab('apply')">申请贷款</button>
                 </div>
                 <div id="loan-tab-apply">
-                    <form method="post" action="/bank-loan.php">
-                        <div class="form-group">
-                            <label class="form-label">贷款金额</label>
+                <form method="post" action="/bank-loan.php">
+                    <div class="form-group">
+                        <label class="form-label">贷款金额</label>
                             <input type="number" name="amount" class="form-input" step="0.01" min="<?= $data['minLoanAmount'] ?>" max="<?= $data['maxLoanAmount'] ?>" placeholder="输入贷款金额" required>
-                            <small>最小: <?= number_format($data['minLoanAmount']) ?> <?= $data['bonusName'] ?>，最大: <?= number_format($data['maxLoanAmount']) ?> <?= $data['bonusName'] ?></small>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">贷款期限</label>
+                        <small>最小: <?= number_format($data['minLoanAmount']) ?> <?= $data['bonusName'] ?>，最大: <?= number_format($data['maxLoanAmount']) ?> <?= $data['bonusName'] ?></small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">贷款期限</label>
                             <?php if (!empty($data['loanRates'])): ?>
-                                <select name="term_days" class="form-select" required>
+                        <select name="term_days" class="form-select" required>
                                     <?php foreach ($data['loanRates'] as $rate): ?>
                                         <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= number_format($rate['loan_rate'] * 100, 2) ?>%)</option>
-                                    <?php endforeach; ?>
-                                </select>
+                            <?php endforeach; ?>
+                        </select>
                             <?php else: ?>
                                 <div class="form-input" style="background-color: #f8f9fa; color: #6c757d; cursor: not-allowed;">
                                     暂无可选期限，请联系管理员配置
                                 </div>
                                 <small class="text-muted">管理员需要在后台设置中配置贷款期限和利率</small>
                             <?php endif; ?>
-                        </div>
+                    </div>
                         <?php if (!empty($data['loanRates'])): ?>
                             <?php if (($data['currentBonus'] ?? 0) < 0): ?>
                                 <div class="muted" style="margin-top:6px;">当前<?= $data['bonusName'] ?>为负，暂不可申请贷款</div>
@@ -589,7 +589,7 @@ $bonusName = $bonusName ?? '魔力';
                         <?php else: ?>
                             <button type="button" class="btn btn-secondary" disabled>暂不可用</button>
                         <?php endif; ?>
-                    </form>
+                </form>
                 </div>
             <?php endif; ?>
             <div class="sub-title">贷款说明</div>
@@ -618,18 +618,18 @@ $bonusName = $bonusName ?? '魔力';
                 <form method="post" action="/bank-deposit.php" class="form-row">
                     <input type="hidden" name="deposit_type" value="fixed">
                     <div class="form-field">
-                        <label class="form-label">存款金额</label>
+                    <label class="form-label">存款金额</label>
                         <input type="number" name="amount" class="form-input" step="0.01" min="<?= $data['minDepositAmount'] ?>" max="<?= $data['currentBonus'] ?>" placeholder="输入存款金额" required>
-                        <small>最小: <?= number_format($data['minDepositAmount']) ?> <?= $data['bonusName'] ?>，当前余额: <?= number_format($data['currentBonus']) ?> <?= $data['bonusName'] ?></small>
-                    </div>
+                    <small>最小: <?= number_format($data['minDepositAmount']) ?> <?= $data['bonusName'] ?>，当前余额: <?= number_format($data['currentBonus']) ?> <?= $data['bonusName'] ?></small>
+                </div>
                     <div class="form-field">
-                        <label class="form-label">存款期限</label>
+                    <label class="form-label">存款期限</label>
                         <?php if (!empty($data['depositRates'])): ?>
-                            <select name="term_days" class="form-select" required>
+                    <select name="term_days" class="form-select" required>
                                 <?php foreach ($data['depositRates'] as $rate): ?>
                                     <option value="<?= $rate['term_days'] ?>"><?= $rate['term_days'] ?>天 (日利率: <?= number_format($rate['deposit_rate'] * 100, 2) ?>%)</option>
-                                <?php endforeach; ?>
-                            </select>
+                        <?php endforeach; ?>
+                    </select>
                         <?php else: ?>
                             <div class="form-input" style="background-color: #f8f9fa; color: #6c757d; cursor: not-allowed;">
                                 暂无可选期限，请联系管理员配置
@@ -695,7 +695,7 @@ $bonusName = $bonusName ?? '魔力';
                 </div>
             </div>
         </div>
-      </div>
+        </div>
     </div>
 
     <div class="row-spacer"></div>
@@ -1255,4 +1255,4 @@ window.addEventListener('resize', debounce(equalizeRow2, 120));
       </div>
     </form>
   </div>
-  </div>
+</div>
