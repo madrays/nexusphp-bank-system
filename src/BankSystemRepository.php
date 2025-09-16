@@ -448,7 +448,7 @@ class BankSystemRepository extends BasePlugin
     /**
      * 创建存款
      */
-    public function createDeposit(int $userId, float $amount, float $interestRate, int $termDays): bool
+    public function createDeposit(int $userId, float $amount, float $interestRate, int $termDays, string $type = 'fixed'): bool
     {
         $userBonus = $this->getUserBonus($userId);
         if ($userBonus < $amount) {
@@ -456,19 +456,34 @@ class BankSystemRepository extends BasePlugin
         }
 
         try {
-            $maturityDate = date('Y-m-d H:i:s', strtotime("+{$termDays} days"));
             $createdAt = date('Y-m-d H:i:s');
 
             // 扣除存款金额
             $bonusName = $this->getBonusName();
             $this->updateUserBonus($userId, -$amount, "银行存款：{$amount} {$bonusName}");
 
-            // 创建存款记录
-            $sql = "INSERT INTO bank_deposits (user_id, amount, interest_rate, term_days, maturity_date, status, created_at, updated_at)
-                    VALUES ($userId, $amount, $interestRate, $termDays, '$maturityDate', 'active', '$createdAt', '$createdAt')";
-            \Nexus\Database\NexusDB::statement($sql);
-
-            return true;
+            if ($type === 'demand') {
+                // 活期：增加活期账户余额，不写入 bank_deposits
+                $account = $this->getOrCreateDemandAccount($userId, $interestRate);
+                $now = $createdAt;
+                $newRate = $account['interest_rate'] > 0 ? $account['interest_rate'] : $interestRate;
+                // 为避免下次调度按历史天数补发，存入当日将 last_interest_date 推进为今天
+                $sql = "UPDATE bank_demand_accounts 
+                        SET balance = balance + $amount, 
+                            interest_rate = $newRate, 
+                            last_interest_date = IF(last_interest_date IS NULL OR last_interest_date < CURDATE(), CURDATE(), last_interest_date),
+                            updated_at = '$now' 
+                        WHERE user_id = $userId";
+                \Nexus\Database\NexusDB::statement($sql);
+                return true;
+            } else {
+                // 定期：写入 bank_deposits，标记 type=fixed
+                $maturityDate = date('Y-m-d H:i:s', strtotime("+{$termDays} days"));
+                $sql = "INSERT INTO bank_deposits (user_id, amount, interest_rate, term_days, maturity_date, type, status, created_at, updated_at)
+                        VALUES ($userId, $amount, $interestRate, $termDays, '$maturityDate', 'fixed', 'active', '$createdAt', '$createdAt')";
+                \Nexus\Database\NexusDB::statement($sql);
+                return true;
+            }
         } catch (\Exception $e) {
             do_log("[BANK_SYSTEM] Failed to create deposit: " . $e->getMessage(), 'error');
             return false;
@@ -615,7 +630,8 @@ class BankSystemRepository extends BasePlugin
             'loanPayoff' => $loanPayoff,
             'deposits' => $deposits,
             'demandAccount' => $demandAccount,
-            'demandInterestRate' => (float)($demandAccount['interest_rate'] ?? ($settings['demand_interest_rate'] ?? 0)),
+            // 展示用活期利率以后台设置为准（小数），避免受旧账户利率影响
+            'demandInterestRate' => (float)($settings['demand_interest_rate'] ?? ($demandAccount['interest_rate'] ?? 0)),
             'interestRates' => $interestRates, // 混合数组，仅用于显示
             'loanRates' => $loanRates, // 纯贷款利率数组
             'depositRates' => $depositRates, // 纯存款利率数组
@@ -683,14 +699,65 @@ class BankSystemRepository extends BasePlugin
 	private function getRecentInterest(int $userId, int $days = 9): array
 	{
 		$start = date('Y-m-d', strtotime('-' . ($days - 1) . ' days'));
-		$sql = "SELECT calculation_date AS date, COALESCE(SUM(amount),0) AS amount FROM bank_interest_records WHERE user_id = $userId AND calculation_date >= '$start' GROUP BY calculation_date ORDER BY calculation_date ASC";
-		return \Nexus\Database\NexusDB::select($sql);
+		$sql = "SELECT calculation_date AS date,
+					COALESCE(SUM(CASE WHEN type IN ('deposit','demand') THEN amount ELSE 0 END),0) AS deposit_amount,
+					COALESCE(SUM(CASE WHEN type = 'loan' THEN amount ELSE 0 END),0) AS loan_amount
+				FROM bank_interest_records
+				WHERE user_id = $userId AND calculation_date >= '$start'
+				GROUP BY calculation_date
+				ORDER BY calculation_date ASC";
+		$rows = \Nexus\Database\NexusDB::select($sql);
+		// 兼容字段：amount = 净值（存款利息 - 贷款利息）
+		foreach ($rows as &$r) {
+			$dep = (float)($r['deposit_amount'] ?? 0);
+			$loan = (float)($r['loan_amount'] ?? 0);
+			$r['amount'] = round($dep - $loan, 2);
+		}
+		unset($r);
+		return $rows;
 	}
 
 	private function getMaturingDeposits(int $userId, int $days = 7): array
 	{
 		$sql = "SELECT id, amount, maturity_date FROM bank_deposits WHERE user_id = $userId AND type='fixed' AND status='active' AND maturity_date BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL $days DAY) ORDER BY maturity_date ASC";
 		return \Nexus\Database\NexusDB::select($sql);
+	}
+
+	/**
+	 * 活期支取：从活期账户转回站点余额
+	 */
+	public function withdrawDemand(int $userId, float $amount): array
+	{
+		if ($amount <= 0) {
+			return ['success' => false, 'message' => '金额必须大于0'];
+		}
+
+		try {
+			// 读取默认活期利率（小数）用于账户初始化
+			$raw = (float)(get_setting('bank_system.demand_interest_rate') ?: 0);
+			$defaultRate = $raw > 1 ? ($raw / 100.0) : $raw;
+			$account = $this->getOrCreateDemandAccount($userId, $defaultRate);
+			$balance = (float)($account['balance'] ?? 0);
+
+			if ($balance < $amount) {
+				return ['success' => false, 'message' => '活期余额不足'];
+			}
+
+			// 扣减活期余额
+			$newBal = $balance - $amount;
+			$now = date('Y-m-d H:i:s');
+			$upd = "UPDATE bank_demand_accounts SET balance = $newBal, updated_at = '$now' WHERE id = {$account['id']}";
+			\Nexus\Database\NexusDB::statement($upd);
+
+			// 增加用户站点余额
+			$bonusName = $this->getBonusName();
+			$this->updateUserBonus($userId, $amount, "活期支取：{$amount} {$bonusName}");
+
+			return ['success' => true, 'message' => "支取成功，已转入 {$amount} {$bonusName}"];
+		} catch (\Throwable $e) {
+			do_log('[BANK_SYSTEM] withdrawDemand failed: ' . $e->getMessage(), 'error');
+			return ['success' => false, 'message' => '支取失败，请稍后重试'];
+		}
 	}
 
     /**
@@ -713,7 +780,7 @@ class BankSystemRepository extends BasePlugin
             $defaults = [
                 'enabled' => true,
                 'show_in_navigation' => true,
-                'demand_interest_rate' => 0.01,
+                'demand_interest_rate' => 1, // 百分比输入：1 表示 1%
                 'loan_ratio' => 24,
                 'loan_ratio_constant' => 0,
                 'early_withdrawal_penalty' => 0.1,
@@ -730,6 +797,7 @@ class BankSystemRepository extends BasePlugin
             }
 
             // 类型转换和百分比到小数转换
+            // 后台以百分比输入，这里统一转换为小数参与计算
             $settings['demand_interest_rate'] = (float)$settings['demand_interest_rate'] / 100;
             $settings['loan_ratio'] = (float)$settings['loan_ratio'];
             $settings['loan_ratio_constant'] = (float)$settings['loan_ratio_constant'];
@@ -758,6 +826,7 @@ class BankSystemRepository extends BasePlugin
             do_log('[BANK_SYSTEM] getSettings failed: ' . $e->getMessage(), 'error');
             return [
                 'enabled' => true,
+                // 兜底：小数形式（1%）
                 'demand_interest_rate' => 0.01,
                 'loan_ratio' => 24,
                 'loan_ratio_constant' => 0,

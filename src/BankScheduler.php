@@ -125,7 +125,9 @@ class BankScheduler
             // 优先使用账户自带利率；否则退回设置项
             $dailyRate = (float)($acc['interest_rate'] ?? 0);
             if ($dailyRate <= 0) {
-                $dailyRate = (float)(get_setting('bank_system.demand_interest_rate') ?: 0);
+                // 后台以百分比存储，调度时需转换为小数
+                $raw = (float)(get_setting('bank_system.demand_interest_rate') ?: 0);
+                $dailyRate = $raw > 1 ? ($raw / 100.0) : $raw;
             }
 
             if ($dailyRate <= 0) {
@@ -260,7 +262,9 @@ class BankScheduler
         $allowNegative = (bool)(get_setting('bank_system.allow_negative_balance') ?: false);
 
         // 1) 先扣活期余额（不动定期）
-        $defaultRate = (float)(get_setting('bank_system.demand_interest_rate') ?: 0);
+        // 后台以百分比存储，创建账户时转换为小数
+        $raw = (float)(get_setting('bank_system.demand_interest_rate') ?: 0);
+        $defaultRate = $raw > 1 ? ($raw / 100.0) : $raw;
         $demand = $this->bankRepo->getOrCreateDemandAccount((int)$loan['user_id'], $defaultRate);
         $demandBal = (float)($demand['balance'] ?? 0);
         $fromDemand = min($demandBal, (float)$loan['remaining_amount']);

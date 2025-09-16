@@ -182,10 +182,13 @@ $bonusName = $bonusName ?? '魔力';
 .mini-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 @media (max-width:900px){.mini-grid-3{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:640px){.mini-grid-3{grid-template-columns:1fr}}
-.mini{background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;padding:6px 8px;display:flex;flex-direction:column;gap:4px}
+.mini{background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;padding:6px 6px;display:flex;flex-direction:column;gap:2px}
 .mini,.mini-fixed{height:64px}
-.mini .top{display:flex;justify-content:space-between;gap:8px}
-.mini .amt{font-weight:800;color:#111;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini .top{display:flex;justify-content:center;align-items:center;gap:6px}
+.mini .amt{font-weight:800;color:#111;font-size:12px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+.assets-grid .mini{align-items:center;justify-content:center}
+.assets-grid .mini .top{justify-content:center}
+.assets-grid .mini .amt{display:flex;align-items:center;justify-content:center;width:100%;text-align:center;color:#0f172a;-webkit-text-fill-color:initial;background:none;text-shadow:0 1px 0 rgba(0,0,0,0.06)}
 .mini .meta{display:none}
 .mini .tag{display:none}
 .dop{color:#fff}
@@ -423,7 +426,7 @@ $bonusName = $bonusName ?? '魔力';
         <div class="overview-card">
             <div class="overview-title">👤 我的资产概览</div>
             <div class="unit-hint">单位：<?= $data['bonusName'] ?></div>
-            <div class="mini-grid-3">
+            <div class="mini-grid-3 assets-grid">
                 <?php $dop=1; $kvItems=[
                   ['k'=>'总资产','v'=>number_format($data['userOverview']['total_asset'] ?? 0,2)],
                   ['k'=>'净资产','v'=>number_format($data['userOverview']['net_asset'] ?? 0,2)],
@@ -449,16 +452,28 @@ $bonusName = $bonusName ?? '魔力';
               <?php 
                 $riList = $data['recentInterest'] ?? [];
                 $map = [];
-                foreach ($riList as $row) { $map[$row['date']] = $row['amount']; }
+                foreach ($riList as $row) {
+                  $map[$row['date']] = [
+                    'dep' => (float)($row['deposit_amount'] ?? 0),
+                    'loan' => (float)($row['loan_amount'] ?? 0),
+                    'net' => isset($row['amount']) ? (float)$row['amount'] : ((float)($row['deposit_amount'] ?? 0) - (float)($row['loan_amount'] ?? 0)),
+                  ];
+                }
                 for ($i=8,$idx=1; $i>=0; $i--, $idx++) {
                   $d = date('Y-m-d', strtotime("-$i day"));
-                  $amt = isset($map[$d]) ? $map[$d] : 0;
+                  $dep = isset($map[$d]) ? (float)$map[$d]['dep'] : 0.0;
+                  $loan = isset($map[$d]) ? (float)$map[$d]['loan'] : 0.0;
+                  $net = isset($map[$d]) ? (float)$map[$d]['net'] : ($dep - $loan);
               ?>
                 <div class="mini mini-fixed">
                   <div class="top">
                     <div class="k" style="font-size:12px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= $d ?></div>
                   </div>
-                  <div class="amt"><?= number_format($amt, 2) ?></div>
+                  <div class="amt" style="display:flex;flex-direction:column;gap:2px;align-items:center;">
+                    <div style="color:#16a34a;">+<?= number_format($dep, 2) ?></div>
+                    <div style="color:#dc2626;">-<?= number_format($loan, 2) ?></div>
+                    <div style="font-size:12px;color:#64748b;">= <?= number_format($net, 2) ?></div>
+                  </div>
         </div>
               <?php } ?>
         </div>
@@ -668,7 +683,10 @@ $bonusName = $bonusName ?? '魔力';
                     <input type="hidden" name="demand_withdraw" value="1">
                     <div class="form-field">
                         <label class="form-label">支取金额</label>
-                        <input type="number" name="amount" class="form-input" step="0.01" min="0.01" max="<?= $data['demandAccount']['balance'] ?? 0 ?>" placeholder="输入金额" required>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <input type="number" name="amount" class="form-input" step="0.01" min="0.01" max="<?= $data['demandAccount']['balance'] ?? 0 ?>" placeholder="输入金额" required>
+                            <button type="button" class="btn" onclick="(function(btn){var i=btn.parentNode.querySelector('input[name=amount]'); if(i){ i.value = i.max || ''; i.focus(); }})(this)">全部</button>
+                        </div>
                     </div>
                     <div>
                         <label class="form-label" style="visibility:hidden;">提交</label>
@@ -896,10 +914,21 @@ $bonusName = $bonusName ?? '魔力';
             <div class="stat-value"><?= number_format($data['siteOverview']['loan_outstanding'] ?? 0, 2) ?></div>
             <div class="stat-hint"><?= (int)($data['siteOverview']['loan_count'] ?? 0) ?> 笔</div>
           </div>
+          <?php 
+            $ri = $data['recentInterest'] ?? []; 
+            $today = date('Y-m-d');
+            $todayRow = null; foreach ($ri as $row) { if (($row['date'] ?? '') === $today) { $todayRow = $row; break; } }
+            $todayDep = isset($todayRow['deposit_amount']) ? (float)$todayRow['deposit_amount'] : 0;
+            $todayLoan = isset($todayRow['loan_amount']) ? (float)$todayRow['loan_amount'] : 0;
+          ?>
           <div class="stat-item">
-            <div class="stat-label">近期利息</div>
-            <div class="stat-value"><?= number_format(array_sum(array_column($data['recentInterest'] ?? [], 'amount')), 2) ?></div>
-            <div class="stat-hint">总计</div>
+            <div class="stat-label">当日利息</div>
+            <div class="stat-value">
+              <span style="color:#16a34a;">+<?= number_format($todayDep, 2) ?></span>
+              <span style="margin:0 6px; color:#94a3b8;">/</span>
+              <span style="color:#dc2626;">-<?= number_format($todayLoan, 2) ?></span>
+            </div>
+            <div class="stat-hint">存款 / 贷款</div>
           </div>
         </div>
       </div>
@@ -1247,7 +1276,10 @@ window.addEventListener('resize', debounce(equalizeRow2, 120));
       <input type="hidden" name="demand_withdraw" value="1">
       <div class="form-group">
         <label class="form-label">金额</label>
-        <input type="number" name="amount" class="form-input" step="0.01" min="0.01" max="<?= $data['demandAccount']['balance'] ?? 0 ?>" placeholder="输入金额" required>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="number" name="amount" class="form-input" step="0.01" min="0.01" max="<?= $data['demandAccount']['balance'] ?? 0 ?>" placeholder="输入金额" required>
+          <button type="button" class="btn" onclick="(function(btn){var i=btn.parentNode.querySelector('input[name=amount]'); if(i){ i.value = i.max || ''; i.focus(); }})(this)">全部</button>
+        </div>
       </div>
       <div class="action-bar" style="justify-content:flex-end;">
         <button type="button" class="btn" onclick="closeModal('modal-demand-withdraw')">取消</button>

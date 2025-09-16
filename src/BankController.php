@@ -337,7 +337,8 @@ class BankController
         }
 
         if ($type === 'deposit_demand') {
-            return (float)($settings['demand_interest_rate'] ?? 0.02);
+            // 设置中已转换为小数，默认改为 0.01（1%）
+            return (float)($settings['demand_interest_rate'] ?? 0.01);
         }
 
         if ($type === 'deposit_fixed') {
