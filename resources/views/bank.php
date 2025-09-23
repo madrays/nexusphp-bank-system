@@ -315,13 +315,7 @@ $bonusName = $bonusName ?? '魔力';
 .metric .m-v{font-weight:800;font-size:16px;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .metric .m-s{font-size:12px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* 暗色模式 */
-@media (prefers-color-scheme: dark){
-  :root{--bg:#0c0d0f;--card:#15161a;--text:#e5e7eb;--muted:#9aa0a6;--primary:#0a84ff;--primary-dark:#0a6cd6;--success:#32d74b;--warning:#ffd60a;--danger:#ff453a}
-  .bank-header{background:linear-gradient(135deg,#0f1013,#090a0c)}
-  .section-title{color:#e5e7eb;border-bottom-color:#23252b}
-  .records-table td,.records-table th{border-bottom-color:#23252b}
-}
+/* 禁用暗色模式：强制使用浅色变量，不随系统夜间切换 */
 
 /* 双栏布局：规则 与 趋势面板并排 */
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
